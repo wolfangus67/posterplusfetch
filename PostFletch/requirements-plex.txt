@@ -1,0 +1,11 @@
+# Optional dependencies for plex_sync.py — the Plex companion script.
+#
+# Kept separate from requirements.txt so the core PostersPlus service image
+# stays lean; only install this if you actually intend to run plex_sync.py.
+#
+#   pip install -r requirements.txt -r requirements-plex.txt
+#
+# (httpx is already a core dependency — listed here too so this file is
+# sufficient on its own for a standalone install of just the sync script.)
+httpx>=0.25,<1.0
+plexapi>=4.15,<5

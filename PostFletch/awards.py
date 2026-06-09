@@ -1,0 +1,1782 @@
+#awards.py
+import os
+import math
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+try:
+    import cairo as _cairo
+    _HAS_CAIRO = True
+except ImportError:
+    _HAS_CAIRO = False
+
+
+# ---------------------------------------------------------------------------
+# Sentinel
+# ---------------------------------------------------------------------------
+
+class _FetchFailed:
+    """Singleton sentinel returned when a fetch attempt fails."""
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    def __repr__(self):
+        return "FETCH_FAILED"
+
+FETCH_FAILED = _FetchFailed()
+
+
+class _RateLimited:
+    """
+    Returned when a fetch was rejected with HTTP 429.
+
+    Carries the parsed Retry-After value (in seconds) when the upstream
+    provided one, so the caller can honour it instead of the default fixed
+    back-off. Always distinct from FETCH_FAILED so the standard retry path
+    skips immediate re-attempts (retrying a 429 is counterproductive).
+    """
+    __slots__ = ("retry_after",)
+
+    def __init__(self, retry_after: float | None = None):
+        self.retry_after = retry_after
+
+    def __repr__(self):
+        return f"RATE_LIMITED(retry_after={self.retry_after})"
+
+
+# ---------------------------------------------------------------------------
+# Emmy winners — hardcoded TMDB IDs
+# Drama, Comedy and Limited Series winners only.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Golden Globe Best Motion Picture – Drama — hardcoded TMDB IDs
+# Sourced from: themoviedb.org/award/4-the-golden-globe-awards/category/7
+# Winners: all years available. Nominees: 2006 onwards (complete data).
+# Update annually after the ceremony.
+# ---------------------------------------------------------------------------
+
+GOLDEN_GLOBE_DRAMA_WINNER_TMDB_IDS: set[int] = {
+    858024,  # Hamnet (2026)
+    549509,  # The Brutalist (2025)
+    872585,  # Oppenheimer (2024)
+    804095,  # The Fabelmans (2023)
+    600583,  # The Power of the Dog (2022)
+    581734,  # Nomadland (2021)
+    530915,  # 1917 (2020)
+    424694,  # Bohemian Rhapsody (2019)
+    359940,  # Three Billboards Outside Ebbing, Missouri (2018)
+    376867,  # Moonlight (2017)
+    281957,  # The Revenant (2016)
+    85350,   # Boyhood (2015)
+    76203,   # 12 Years a Slave (2014)
+    68734,   # Argo (2013)
+    65057,   # The Descendants (2012)
+    37799,   # The Social Network (2011)
+    19995,   # Avatar (2010)
+    12405,   # Slumdog Millionaire (2009)
+    4347,    # Atonement (2008)
+    1164,    # Babel (2007)
+    142,     # Brokeback Mountain (2006)
+    2567,    # The Aviator (2005)
+    122,     # The Lord of the Rings: The Return of the King (2004)
+    13,      # Forrest Gump (1995)
+    279,     # Amadeus (1985)
+    826,     # The Bridge on the River Kwai (1958)
+    2897,    # Around the World in 80 Days (1957)
+    220,     # East of Eden (1956)
+    654,     # On the Waterfront (1955)
+    29912,   # The Robe (1954)
+    27191,   # The Greatest Show on Earth (1953)
+    25673,   # A Place in the Sun (1952)
+}
+
+GOLDEN_GLOBE_DRAMA_NOM_TMDB_IDS: set[int] = {
+    # 2026 (83rd)
+    1062722,  # Frankenstein
+    1456349,  # It Was Just an Accident
+    1220564,  # The Secret Agent
+    1124566,  # Sentimental Value
+    1233413,  # Sinners
+    # 2025 (82nd)
+    661539,   # A Complete Unknown
+    974576,   # Conclave
+    693134,   # Dune: Part Two
+    1028196,  # Nickel Boys
+    1211472,  # September 5
+    # 2024 (81st)
+    915935,   # Anatomy of a Fall
+    466420,   # Killers of the Flower Moon
+    523607,   # Maestro
+    666277,   # Past Lives
+    467244,   # The Zone of Interest
+    # 2023 (80th)
+    76600,    # Avatar: The Way of Water
+    614934,   # Elvis
+    817758,   # TÁR
+    361743,   # Top Gun: Maverick
+    # 2022 (79th)
+    777270,   # Belfast
+    776503,   # CODA
+    438631,   # Dune
+    614917,   # King Richard
+    # 2021 (78th)
+    600354,   # The Father
+    614560,   # Mank
+    582014,   # Promising Young Woman
+    556984,   # The Trial of the Chicago 7
+    # 2020 (77th)
+    398978,   # The Irishman
+    475557,   # Joker
+    492188,   # Marriage Story
+    551332,   # The Two Popes
+    # 2019 (76th)
+    284054,   # Black Panther
+    487558,   # BlacKkKlansman
+    465914,   # If Beale Street Could Talk
+    332562,   # A Star Is Born
+    # 2018 (75th)
+    398818,   # Call Me by Your Name
+    374720,   # Dunkirk
+    446354,   # The Post
+    399055,   # The Shape of Water
+    # 2017 (74th)
+    324786,   # Hacksaw Ridge
+    338766,   # Hell or High Water
+    334543,   # Lion
+    334541,   # Manchester by the Sea
+    # 2016 (73rd)
+    258480,   # Carol
+    76341,    # Mad Max: Fury Road
+    264644,   # Room
+    314365,   # Spotlight
+    # 2015 (72nd)
+    87492,    # Foxcatcher
+    205596,   # The Imitation Game
+    273895,   # Selma
+    266856,   # The Theory of Everything
+    # 2014 (71st)
+    109424,   # Captain Phillips
+    49047,    # Gravity
+    205220,   # Philomena
+    96721,    # Rush
+    # 2013 (70th)
+    68718,    # Django Unchained
+    87827,    # Life of Pi
+    72976,    # Lincoln
+    97630,    # Zero Dark Thirty
+    # 2012 (69th)
+    50014,    # The Help
+    44826,    # Hugo
+    10316,    # The Ides of March
+    60308,    # Moneyball
+    57212,    # War Horse
+    # 2011 (68th)
+    44214,    # Black Swan
+    45317,    # The Fighter
+    27205,    # Inception
+    45269,    # The King's Speech
+    # 2010 (67th)
+    12162,    # The Hurt Locker
+    16869,    # Inglourious Basterds
+    25793,    # Precious
+    22947,    # Up in the Air
+    # 2009 (66th)
+    4922,     # The Curious Case of Benjamin Button
+    11499,    # Frost/Nixon
+    8055,     # The Reader
+    4148,     # Revolutionary Road
+    # 2008 (65th)
+    4982,     # American Gangster
+    2252,     # Eastern Promises
+    14047,    # The Great Debaters
+    4566,     # Michael Clayton
+    6977,     # No Country for Old Men
+    7345,     # There Will Be Blood
+    # 2007 (64th)
+    10741,    # Bobby
+    1422,     # The Departed
+    1440,     # Little Children
+    1165,     # The Queen
+    # 2006 (63rd)
+    1985,     # The Constant Gardener
+    3291,     # Good Night, and Good Luck.
+    59,       # A History of Violence
+    116,      # Match Point
+}
+
+# ---------------------------------------------------------------------------
+# Golden Globe Best Motion Picture – Musical or Comedy — hardcoded TMDB IDs
+# Sourced from: themoviedb.org/award/4-the-golden-globe-awards/category/8
+# Winners: all years available. Nominees: 2006 onwards.
+# ---------------------------------------------------------------------------
+
+GOLDEN_GLOBE_COMEDY_WINNER_TMDB_IDS: set[int] = {
+    1054867,  # One Battle After Another (2026)
+    974950,   # Emilia Pérez (2025)
+    792307,   # Poor Things (2024)
+    674324,   # The Banshees of Inisherin (2023)
+    511809,   # West Side Story (2022)
+    740985,   # Borat Subsequent Moviefilm (2021)
+    466272,   # Once Upon a Time... in Hollywood (2020)
+    490132,   # Green Book (2019)
+    391713,   # Lady Bird (2018)
+    313369,   # La La Land (2017)
+    286217,   # The Martian (2016)
+    120467,   # The Grand Budapest Hotel (2015)
+    168672,   # American Hustle (2014)
+    82695,    # Les Misérables (2013)
+    74643,    # The Artist (2012)
+    39781,    # The Kids Are All Right (2011)
+    18785,    # The Hangover (2010)
+    5038,     # Vicky Cristina Barcelona (2009)
+    13885,    # Sweeney Todd (2008)
+    1125,     # Dreamgirls (2007)
+    69,       # Walk the Line (2006)
+    9675,     # Sideways (2005)
+    153,      # Lost in Translation (2004)
+    8587,     # The Lion King (1995)
+    9326,     # Romancing the Stone (1985)
+    16520,    # The King and I (1957)
+    4825,     # Guys and Dolls (1956)
+    51044,    # Carmen Jones (1955)
+    65787,    # With a Song in My Heart (1953)
+    2769,     # An American in Paris (1952)
+}
+
+GOLDEN_GLOBE_COMEDY_NOM_TMDB_IDS: set[int] = {
+    # 2026 (83rd)
+    1299655,  # Blue Moon
+    701387,   # Bugonia
+    1317288,  # Marty Supreme
+    639988,   # No Other Choice
+    1254808,  # Nouvelle Vague
+    # 2025 (82nd)
+    1013850,  # A Real Pain
+    1064213,  # Anora
+    937287,   # Challengers
+    933260,   # The Substance
+    402431,   # Wicked
+    # 2024 (81st)
+    964980,   # Air
+    1056360,  # American Fiction
+    346698,   # Barbie
+    840430,   # The Holdovers
+    839369,   # May December
+    # 2023 (80th)
+    615777,   # Babylon
+    545611,   # Everything Everywhere All at Once
+    661374,   # Glass Onion: A Knives Out Mystery
+    497828,   # Triangle of Sadness
+    # 2022 (79th)
+    730047,   # Cyrano
+    646380,   # Don't Look Up
+    718032,   # Licorice Pizza
+    537116,   # tick, tick... BOOM!
+    # 2021 (78th)
+    556574,   # Hamilton
+    586101,   # Music
+    587792,   # Palm Springs
+    611213,   # The Prom
+    # 2020 (77th)
+    528888,   # Dolemite Is My Name
+    515001,   # Jojo Rabbit
+    546554,   # Knives Out
+    504608,   # Rocketman
+    # 2019 (76th)
+    455207,   # Crazy Rich Asians
+    375262,   # The Favourite
+    400650,   # Mary Poppins Returns
+    429197,   # Vice
+    # 2018 (75th)
+    371638,   # The Disaster Artist
+    419430,   # Get Out
+    316029,   # The Greatest Showman
+    389015,   # I, Tonya
+    # 2017 (74th)
+    342737,   # 20th Century Women
+    293660,   # Deadpool
+    315664,   # Florence Foster Jenkins
+    369557,   # Sing Street
+    # 2016 (73rd)
+    318846,   # The Big Short
+    274479,   # Joy
+    238713,   # Spy
+    271718,   # Trainwreck
+    # 2015 (72nd)
+    194662,   # Birdman
+    224141,   # Into the Woods
+    234200,   # Pride
+    239563,   # St. Vincent
+    # 2014 (71st)
+    152601,   # Her
+    86829,    # Inside Llewyn Davis
+    129670,   # Nebraska
+    106646,   # The Wolf of Wall Street
+    # 2013 (70th)
+    74534,    # The Best Exotic Marigold Hotel
+    83666,    # Moonrise Kingdom
+    81025,    # Salmon Fishing in the Yemen
+    82693,    # Silver Linings Playbook
+    # 2012 (69th)
+    40807,    # 50/50
+    55721,    # Bridesmaids
+    59436,    # Midnight in Paris
+    75900,    # My Week with Marilyn
+    # 2011 (68th)
+    12155,    # Alice in Wonderland
+    42297,    # Burlesque
+    39514,    # RED
+    37710,    # The Tourist
+    # 2010 (67th)
+    19913,    # (500) Days of Summer
+    22897,    # It's Complicated
+    24803,    # Julie & Julia
+    10197,    # Nine
+    # 2009 (66th)
+    4944,     # Burn After Reading
+    10503,    # Happy-Go-Lucky
+    8321,     # In Bruges
+    11631,    # Mamma Mia!
+    # 2008 (65th)
+    4688,     # Across the Universe
+    6538,     # Charlie Wilson's War
+    2976,     # Hairspray
+    7326,     # Juno
+    # 2007 (64th)
+    496,      # Borat: Cultural Learnings of America
+    350,      # The Devil Wears Prada
+    773,      # Little Miss Sunshine
+    9388,     # Thank You for Smoking
+    # 2006 (63rd)
+    10773,    # Mrs. Henderson Presents
+    4348,     # Pride & Prejudice
+    9899,     # The Producers
+    10707,    # The Squid and the Whale
+}
+
+# ---------------------------------------------------------------------------
+# Golden Globe Best Television Series – Drama — hardcoded TMDB IDs
+# Sourced from: themoviedb.org/award/4-the-golden-globe-awards/category/42
+# Winners: all years available. Nominees: 2006 onwards.
+# ---------------------------------------------------------------------------
+
+GOLDEN_GLOBE_TV_DRAMA_WINNER_TMDB_IDS: set[int] = {
+    250307,   # The Pitt (2026)
+    126308,   # Shōgun (2025)
+    76331,    # Succession (2024 & 2022 & 2020)
+    94997,    # House of the Dragon (2023)
+    65494,    # The Crown (2021 & 2017)
+    46533,    # The Americans (2019)
+    69478,    # The Handmaid's Tale (2018)
+    62560,    # Mr. Robot (2016)
+    61463,    # The Affair (2015)
+    1396,     # Breaking Bad (2014)
+    1407,     # Homeland (2013 & 2012)
+    1621,     # Boardwalk Empire (2011)
+    1104,     # Mad Men (2010 & 2009 & 2008)
+    1416,     # Grey's Anatomy (2007)
+    4607,     # Lost (2006)
+    3750,     # Nip/Tuck (2005)
+}
+
+GOLDEN_GLOBE_TV_DRAMA_NOM_TMDB_IDS: set[int] = {
+    # 2026 (83rd)
+    203857,   # The Diplomat
+    225171,   # Pluribus
+    95396,    # Severance
+    95480,    # Slow Horses
+    111803,   # The White Lotus
+    # 2025 (82nd)
+    222766,   # The Day of the Jackal
+    203857,   # The Diplomat
+    118642,   # Mr. & Mrs. Smith
+    95480,    # Slow Horses
+    93405,    # Squid Game
+    # 2024 (81st)
+    157744,   # 1923
+    65494,    # The Crown
+    203857,   # The Diplomat
+    100088,   # The Last of Us
+    90282,    # The Morning Show
+    # 2023 (80th)
+    60059,    # Better Call Saul
+    65494,    # The Crown
+    69740,    # Ozark
+    95396,    # Severance
+    # 2022 (79th)
+    96677,    # Lupin
+    90282,    # The Morning Show
+    79084,    # POSE
+    93405,    # Squid Game
+    # 2021 (78th)
+    82816,    # Lovecraft Country
+    82856,    # The Mandalorian
+    69740,    # Ozark
+    81354,    # Ratched
+    # 2020 (77th)
+    66292,    # Big Little Lies
+    65494,    # The Crown
+    72750,    # Killing Eve
+    90282,    # The Morning Show
+    # 2019 (76th)
+    80307,    # Bodyguard
+    80335,    # Homecoming
+    72750,    # Killing Eve
+    79084,    # POSE
+    # 2018 (75th)
+    65494,    # The Crown
+    1399,     # Game of Thrones
+    66732,    # Stranger Things
+    67136,    # This Is Us
+    # 2017 (74th)
+    1399,     # Game of Thrones
+    66732,    # Stranger Things
+    67136,    # This Is Us
+    63247,    # Westworld
+    # 2016 (73rd)
+    61733,    # Empire
+    1399,     # Game of Thrones
+    63351,    # Narcos
+    56570,    # Outlander
+    # 2015 (72nd)
+    33907,    # Downton Abbey
+    1399,     # Game of Thrones
+    1435,     # The Good Wife
+    1425,     # House of Cards
+    # 2014 (71st)
+    33907,    # Downton Abbey
+    1435,     # The Good Wife
+    1425,     # House of Cards
+    58937,    # Masters of Sex
+    # 2013 (70th)
+    1396,     # Breaking Bad
+    1621,     # Boardwalk Empire
+    33907,    # Downton Abbey
+    15621,    # The Newsroom
+    # 2012 (69th)
+    1413,     # American Horror Story
+    1621,     # Boardwalk Empire
+    38922,    # Boss
+    1399,     # Game of Thrones
+    # 2011 (68th)
+    1405,     # Dexter
+    1435,     # The Good Wife
+    1104,     # Mad Men
+    1402,     # The Walking Dead
+    # 2010 (67th)
+    4392,     # Big Love
+    1405,     # Dexter
+    1408,     # House
+    10545,    # True Blood
+    # 2009 (66th)
+    1405,     # Dexter
+    1408,     # House
+    14069,    # In Treatment
+    10545,    # True Blood
+    # 2008 (65th)
+    4392,     # Big Love
+    4920,     # Damages
+    1416,     # Grey's Anatomy
+    1408,     # House
+    2942,     # The Tudors
+    # 2007 (64th)
+    1973,     # 24
+    4392,     # Big Love
+    1639,     # Heroes
+    4607,     # Lost
+    # 2006 (63rd)
+    4015,     # Commander in Chief
+    1416,     # Grey's Anatomy
+    2288,     # Prison Break
+    1891,     # Rome
+}
+
+# ---------------------------------------------------------------------------
+# Golden Globe Best Television Series – Musical or Comedy — hardcoded TMDB IDs
+# Sourced from: themoviedb.org/award/4-the-golden-globe-awards/category/43
+# Winners: all years available. Nominees: 2006 onwards.
+# ---------------------------------------------------------------------------
+
+GOLDEN_GLOBE_TV_COMEDY_WINNER_TMDB_IDS: set[int] = {
+    247767,   # The Studio (2026)
+    124101,   # Hacks (2025 & 2022)
+    136315,   # The Bear (2024)
+    125935,   # Abbott Elementary (2023)
+    61662,    # Schitt's Creek (2021)
+    67070,    # Fleabag (2020)
+    81290,    # The Kominsky Method (2019)
+    70796,    # The Marvelous Mrs. Maisel (2018)
+    65495,    # Atlanta (2017)
+    61744,    # Mozart in the Jungle (2016)
+    61406,    # Transparent (2015)
+    48891,    # Brooklyn Nine-Nine (2014)
+    42282,    # Girls (2013)
+    1421,     # Modern Family (2012)
+    1417,     # Glee (2011 & 2010)
+    4608,     # 30 Rock (2009)
+    2693,     # Extras (2008)
+    4626,     # Ugly Betty (2007)
+    693,      # Desperate Housewives (2006 & 2005)
+}
+
+GOLDEN_GLOBE_TV_COMEDY_NOM_TMDB_IDS: set[int] = {
+    # 2026 (83rd)
+    125935,   # Abbott Elementary
+    124101,   # Hacks
+    250923,   # Nobody Wants This
+    107113,   # Only Murders in the Building
+    136315,   # The Bear
+    # 2025 (82nd)
+    125935,   # Abbott Elementary
+    136315,   # The Bear
+    236235,   # The Gentlemen
+    250923,   # Nobody Wants This
+    107113,   # Only Murders in the Building
+    # 2024 (81st)
+    125935,   # Abbott Elementary
+    73107,    # Barry
+    222023,   # Jury Duty
+    107113,   # Only Murders in the Building
+    97546,    # Ted Lasso
+    # 2023 (80th)
+    136315,   # The Bear
+    124101,   # Hacks
+    107113,   # Only Murders in the Building
+    119051,   # Wednesday
+    # 2022 (79th)
+    93812,    # The Great
+    107113,   # Only Murders in the Building
+    95215,    # Reservation Dogs
+    97546,    # Ted Lasso
+    # 2021 (78th)
+    82596,    # Emily in Paris
+    93287,    # The Flight Attendant
+    93812,    # The Great
+    97546,    # Ted Lasso
+    # 2020 (77th)
+    73107,    # Barry
+    81290,    # The Kominsky Method
+    70796,    # The Marvelous Mrs. Maisel
+    83127,    # The Politician
+    # 2019 (76th)
+    73107,    # Barry
+    66573,    # The Good Place
+    73925,    # Kidding
+    70796,    # The Marvelous Mrs. Maisel
+    # 2018 (75th)
+    61381,    # black-ish
+    64254,    # Master of None
+    71733,    # SMILF
+    74321,    # Will & Grace
+    # 2017 (74th)
+    61381,    # black-ish
+    61744,    # Mozart in the Jungle
+    61406,    # Transparent
+    2947,     # Veep
+    # 2016 (73rd)
+    64043,    # Casual
+    1424,     # Orange Is the New Black
+    60573,    # Silicon Valley
+    61406,    # Transparent
+    2947,     # Veep
+    # 2015 (72nd)
+    42282,    # Girls
+    61418,    # Jane the Virgin
+    1424,     # Orange Is the New Black
+    60573,    # Silicon Valley
+    # 2014 (71st)
+    1418,     # The Big Bang Theory
+    42282,    # Girls
+    1421,     # Modern Family
+    8592,     # Parks and Recreation
+    # 2013 (70th)
+    1418,     # The Big Bang Theory
+    31841,    # Episodes
+    1421,     # Modern Family
+    39325,    # Smash
+    # 2012 (69th)
+    34594,    # Enlightened
+    31841,    # Episodes
+    1417,     # Glee
+    1420,     # New Girl
+    # 2011 (68th)
+    4608,     # 30 Rock
+    1418,     # The Big Bang Theory
+    32406,    # The Big C
+    1421,     # Modern Family
+    18053,    # Nurse Jackie
+    # 2010 (67th)
+    4608,     # 30 Rock
+    1940,     # Entourage
+    1421,     # Modern Family
+    2316,     # The Office
+    # 2009 (66th)
+    1215,     # Californication
+    1940,     # Entourage
+    2316,     # The Office
+    186,      # Weeds
+    # 2008 (65th)
+    4608,     # 30 Rock
+    1215,     # Californication
+    1940,     # Entourage
+    5639,     # Pushing Daisies
+    # 2007 (64th)
+    693,      # Desperate Housewives
+    1940,     # Entourage
+    2316,     # The Office
+    186,      # Weeds
+    # 2006 (63rd)
+    4546,     # Curb Your Enthusiasm
+    1940,     # Entourage
+    252,      # Everybody Hates Chris
+    2317,     # My Name Is Earl
+    186,      # Weeds
+}
+
+# ---------------------------------------------------------------------------
+# Golden Globe Best Television Limited/Anthology Series — hardcoded TMDB IDs
+# Sourced from: themoviedb.org/award/4-the-golden-globe-awards/category/44
+# Winners: all years available. Nominees: 2006 onwards.
+# ---------------------------------------------------------------------------
+
+GOLDEN_GLOBE_TV_LIMITED_WINNER_TMDB_IDS: set[int] = {
+    249042,   # Adolescence (2026)
+    241259,   # Baby Reindeer (2025)
+    154385,   # BEEF (2024)
+    111803,   # The White Lotus (2023)
+    80039,    # The Underground Railroad (2022)
+    87739,    # The Queen's Gambit (2021)
+    87108,    # Chernobyl (2020)
+    64513,    # American Crime Story (2019 & 2017)
+    66292,    # Big Little Lies (2018)
+    61697,    # Wolf Hall (2016)
+    41693,    # Carlos (2011)
+    15114,    # John Adams (2009)
+    13291,    # Elizabeth I (2007)
+    14968,    # Empire Falls (2006)
+}
+
+GOLDEN_GLOBE_TV_LIMITED_NOM_TMDB_IDS: set[int] = {
+    # 2026 (83rd)
+    246386,   # All Her Fault
+    241405,   # Dying for Sex
+    250504,   # The Beast in Me
+    253376,   # The Girlfriend
+    42009,    # Black Mirror
+    # 2025 (82nd)
+    147050,   # Disclaimer
+    225634,   # Monsters: The Lyle and Erik Menendez Story
+    194764,   # The Penguin
+    94028,    # RIPLEY
+    46648,    # True Detective
+    # 2024 (81st)
+    155421,   # All the Light We Cannot See
+    95555,    # Daisy Jones & the Six
+    60622,    # Fargo
+    216089,   # Fellow Travelers
+    117303,   # Lessons in Chemistry
+    # 2023 (80th)
+    155537,   # Black Bird
+    113988,   # DAHMER - Monster: The Jeffrey Dahmer Story
+    122066,   # The Dropout
+    114925,   # Pam & Tommy
+    # 2022 (79th)
+    110695,   # Dopesick
+    64513,    # American Crime Story
+    111141,   # Maid
+    115004,   # Mare of Easttown
+    # 2021 (78th)
+    89905,    # Normal People
+    90705,    # Small Axe
+    83851,    # The Undoing
+    99581,    # Unorthodox
+    # 2020 (77th)
+    82744,    # Catch-22
+    81131,    # Fosse/Verdon
+    80443,    # The Loudest Voice
+    91275,    # Unbelievable
+    # 2019 (76th)
+    71769,    # The Alienist
+    72039,    # Escape at Dannemora
+    70453,    # Sharp Objects
+    79299,    # A Very English Scandal
+    # 2018 (75th)
+    60622,    # Fargo
+    69851,    # FEUD
+    39852,    # The Sinner
+    46638,    # Top of the Lake
+    # 2017 (74th)
+    60791,    # American Crime
+    61859,    # The Night Manager
+    66276,    # The Night Of
+    # 2016 (73rd)
+    60791,    # American Crime
+    1413,     # American Horror Story
+    60622,    # Fargo
+    62516,    # Flesh and Bone
+    # 2011 (68th)
+    16997,    # The Pacific
+    33234,    # The Pillars of the Earth
+    # 2007 (64th)
+    2489,     # Bleak House
+    20056,    # Broken Trail
+    # 2006 (63rd)
+    11099,    # Into the West
+}
+
+# ---------------------------------------------------------------------------
+# Emmy Outstanding Drama / Comedy / Limited Series — nominees only
+# Sourced from: themoviedb.org/award/82-emmy-awards (categories 1, 2, 3)
+# Replaces the generic emmy-award-nominated keyword which captures all Emmy
+# nominations across every category (acting, directing, writing, etc.).
+# Winners are already captured in EMMY_WINNER_TMDB_IDS above.
+# Update annually after the Emmy ceremony.
+# ---------------------------------------------------------------------------
+
+EMMY_DRAMA_NOM_TMDB_IDS: set[int] = {
+    # 2025 (77th)
+    83867,    # Star Wars: Andor
+    203857,   # The Diplomat
+    100088,   # The Last of Us
+    245927,   # Paradise
+    95396,    # Severance
+    95480,    # Slow Horses
+    111803,   # The White Lotus
+    # 2024 (76th)
+    65494,    # The Crown
+    106379,   # Fallout
+    81723,    # The Gilded Age
+    90282,    # The Morning Show
+    118642,   # Mr. & Mrs. Smith
+    108545,   # 3 Body Problem
+    # 2023 (75th)
+    60059,    # Better Call Saul
+    94997,    # House of the Dragon
+    117488,   # Yellowjackets
+    # 2022 (74th)
+    85552,    # Euphoria
+    69740,    # Ozark
+    93405,    # Squid Game
+    66732,    # Stranger Things
+    # 2021 (73rd)
+    91239,    # Bridgerton
+    82816,    # Lovecraft Country
+    79084,    # POSE
+    76479,    # The Boys
+    82856,    # The Mandalorian
+    67136,    # This Is Us
+    # 2020 (72nd)
+    72750,    # Killing Eve
+    # 2019 (71st)
+    80307,    # Bodyguard
+    72750,    # Killing Eve
+    69740,    # Ozark
+    79084,    # POSE
+    76331,    # Succession
+    # 2018 (70th)
+    67136,    # This Is Us
+    66732,    # Stranger Things
+    46533,    # The Americans
+    63247,    # Westworld
+    # 2017 (69th)
+    67136,    # This Is Us
+    60059,    # Better Call Saul
+    1425,     # House of Cards
+    66732,    # Stranger Things
+    63247,    # Westworld
+    # 2016 (68th)
+    60059,    # Better Call Saul
+    33907,    # Downton Abbey
+    1425,     # House of Cards
+    62560,    # Mr. Robot
+    46533,    # The Americans
+    # 2015 (67th)
+    60059,    # Better Call Saul
+    33907,    # Downton Abbey
+    1425,     # House of Cards
+    1104,     # Mad Men
+    1424,     # Orange Is the New Black
+    # 2014 (66th)
+    33907,    # Downton Abbey
+    1425,     # House of Cards
+    1104,     # Mad Men
+    46648,    # True Detective
+    # 2013 (65th)
+    33907,    # Downton Abbey
+    1425,     # House of Cards
+    1104,     # Mad Men
+    # 2012 (64th)
+    1621,     # Boardwalk Empire
+    33907,    # Downton Abbey
+    1104,     # Mad Men
+    # 2011 (63rd)
+    1621,     # Boardwalk Empire
+    1405,     # Dexter
+    4278,     # Friday Night Lights
+}
+
+EMMY_COMEDY_NOM_TMDB_IDS: set[int] = {
+    # 2025 (77th)
+    125935,   # Abbott Elementary
+    136315,   # The Bear
+    124101,   # Hacks
+    250923,   # Nobody Wants This
+    107113,   # Only Murders in the Building
+    136311,   # Shrinking
+    83631,    # What We Do in the Shadows
+    # 2024 (76th)
+    125935,   # Abbott Elementary
+    136315,   # The Bear
+    4546,     # Curb Your Enthusiasm
+    107113,   # Only Murders in the Building
+    157367,   # Palm Royale
+    95215,    # Reservation Dogs
+    83631,    # What We Do in the Shadows
+    # 2023 (75th)
+    125935,   # Abbott Elementary
+    73107,    # Barry
+    222023,   # Jury Duty
+    70796,    # The Marvelous Mrs. Maisel
+    107113,   # Only Murders in the Building
+    97546,    # Ted Lasso
+    119051,   # Wednesday
+    # 2022 (74th)
+    125935,   # Abbott Elementary
+    73107,    # Barry
+    4546,     # Curb Your Enthusiasm
+    124101,   # Hacks
+    70796,    # The Marvelous Mrs. Maisel
+    107113,   # Only Murders in the Building
+    83631,    # What We Do in the Shadows
+    # 2021 (73rd)
+    77169,    # Cobra Kai
+    82596,    # Emily in Paris
+    85702,    # PEN15
+    93287,    # The Flight Attendant
+    81290,    # The Kominsky Method
+    61381,    # black-ish
+    # 2020 (72nd)
+    4546,     # Curb Your Enthusiasm
+    81357,    # Dead to Me
+    67883,    # Insecure
+    66573,    # The Good Place
+    81290,    # The Kominsky Method
+    70796,    # The Marvelous Mrs. Maisel
+    83631,    # What We Do in the Shadows
+    # 2019 (71st)
+    73107,    # Barry
+    84977,    # Russian Doll
+    61662,    # Schitt's Creek
+    66573,    # The Good Place
+    70796,    # The Marvelous Mrs. Maisel
+    2947,     # Veep
+    # 2018 (70th)
+    65495,    # Atlanta
+    73107,    # Barry
+    4546,     # Curb Your Enthusiasm
+    70573,    # GLOW
+    60573,    # Silicon Valley
+    61671,    # Unbreakable Kimmy Schmidt
+    61381,    # black-ish
+    # 2017 (69th)
+    65495,    # Atlanta
+    64254,    # Master of None
+    1421,     # Modern Family
+    60573,    # Silicon Valley
+    61671,    # Unbreakable Kimmy Schmidt
+    61381,    # black-ish
+    # 2016 (68th)
+    64254,    # Master of None
+    1421,     # Modern Family
+    60573,    # Silicon Valley
+    61406,    # Transparent
+    61671,    # Unbreakable Kimmy Schmidt
+    61381,    # black-ish
+    # 2015 (67th)
+    32962,    # Louie
+    1421,     # Modern Family
+    8592,     # Parks and Recreation
+    60573,    # Silicon Valley
+    61406,    # Transparent
+    61671,    # Unbreakable Kimmy Schmidt
+    # 2014 (66th)
+    32962,    # Louie
+    1424,     # Orange Is the New Black
+    60573,    # Silicon Valley
+    1418,     # The Big Bang Theory
+    # 2013 (65th)
+    4608,     # 30 Rock
+    42282,    # Girls
+    32962,    # Louie
+    1418,     # The Big Bang Theory
+    2947,     # Veep
+    # 2012 (64th)
+    4608,     # 30 Rock
+    4546,     # Curb Your Enthusiasm
+    42282,    # Girls
+    1418,     # The Big Bang Theory
+    2947,     # Veep
+    # 2011 (63rd)
+    4608,     # 30 Rock
+    1417,     # Glee
+    8592,     # Parks and Recreation
+    1418,     # The Big Bang Theory
+    2316,     # The Office
+}
+
+EMMY_LIMITED_NOM_TMDB_IDS: set[int] = {
+    # 2025 (77th)
+    42009,    # Black Mirror
+    241405,   # Dying for Sex
+    225634,   # Monsters: The Lyle and Erik Menendez Story
+    194764,   # The Penguin
+    # 2024 (76th)
+    60622,    # Fargo
+    117303,   # Lessons in Chemistry
+    94028,    # RIPLEY
+    46648,    # True Detective
+    # 2023 (75th)
+    113988,   # DAHMER - Monster: The Jeffrey Dahmer Story
+    95555,    # Daisy Jones & the Six
+    156401,   # Fleishman Is in Trouble
+    92830,    # Obi-Wan Kenobi
+    # 2022 (74th)
+    110695,   # Dopesick
+    122066,   # The Dropout
+    95665,    # Inventing Anna
+    114925,   # Pam & Tommy
+    # 2021 (73rd)
+    102619,   # I May Destroy You
+    115004,   # Mare of Easttown
+    80039,    # The Underground Railroad
+    85271,    # WandaVision
+    # 2020 (72nd)
+    90257,    # Little Fires Everywhere
+    83605,    # Mrs. America
+    91275,    # Unbelievable
+    99581,    # Unorthodox
+    # 2019 (71st)
+    72039,    # Escape at Dannemora
+    81131,    # Fosse/Verdon
+    70453,    # Sharp Objects
+    81355,    # When They See Us
+    # 2018 (70th)
+    70128,    # Genius
+    73467,    # Godless
+    72787,    # Patrick Melrose
+    71769,    # The Alienist
+    # 2017 (69th)
+    69851,    # FEUD
+    66276,    # The Night Of
+    # 2016 (68th)
+    60791,    # American Crime
+    66606,    # Roots
+    61859,    # The Night Manager
+    # 2015 (67th)
+    1413,     # American Horror Story
+    61123,    # The Honourable Woman
+    # 2014 (66th)
+    62829,    # Bonnie & Clyde
+    1426,     # Luther
+    57092,    # The White Queen
+    17967,    # Treme
+    # 2010 (62nd)
+    14264,    # Cranford
+    # 2009 (61st)
+    17035,    # Generation Kill
+    # 2008 (60th)
+    19997,    # The Andromeda Strain
+    12584,    # Tin Man
+    # 2007 (59th)
+    5900,     # The Starter Wife
+    2583,     # Prime Suspect
+    # 2006 (58th)
+    2489,     # Bleak House
+    11099,    # Into the West
+    2409,     # Sleeper Cell
+    # 2004 (56th)
+    22859,    # American Family
+    814,      # Hornblower
+    13261,    # Traffic
+    # 2003 (55th)
+    46976,    # Hitler: The Rise of Evil
+    2701,     # Napoleon
+    # 2002 (54th)
+    73536,    # Dinotopia
+    13729,    # Shackleton
+    5256,     # The Mists of Avalon
+    # 2001 (53rd)
+    46679,    # Further Tales of the City
+    75577,    # Life with Judy Garland: Me and My Shadows
+    7389,     # Nuremberg
+    # 2000 (52nd)
+    20658,    # Arabian Nights
+    47059,    # Jesus
+    37542,    # The Beach Boys: An American Family
+    47058,    # P.T. Barnum
+    # 1999 (51st)
+    286423,   # Great Expectations
+    16133,    # Joan of Arc
+    303676,   # The '60s
+    9290,     # The Temptations
+}
+
+# ---------------------------------------------------------------------------
+# Combined lookup sets — used in parse_mdblist_awards for O(1) checks
+# ---------------------------------------------------------------------------
+
+_GG_ALL_WINNERS: set[int] = (
+    GOLDEN_GLOBE_DRAMA_WINNER_TMDB_IDS
+    | GOLDEN_GLOBE_COMEDY_WINNER_TMDB_IDS
+    | GOLDEN_GLOBE_TV_DRAMA_WINNER_TMDB_IDS
+    | GOLDEN_GLOBE_TV_COMEDY_WINNER_TMDB_IDS
+    | GOLDEN_GLOBE_TV_LIMITED_WINNER_TMDB_IDS
+)
+
+_GG_ALL_NOMS: set[int] = (
+    GOLDEN_GLOBE_DRAMA_NOM_TMDB_IDS
+    | GOLDEN_GLOBE_COMEDY_NOM_TMDB_IDS
+    | GOLDEN_GLOBE_TV_DRAMA_NOM_TMDB_IDS
+    | GOLDEN_GLOBE_TV_COMEDY_NOM_TMDB_IDS
+    | GOLDEN_GLOBE_TV_LIMITED_NOM_TMDB_IDS
+)
+
+_EMMY_ALL_NOMS: set[int] = (
+    EMMY_DRAMA_NOM_TMDB_IDS
+    | EMMY_COMEDY_NOM_TMDB_IDS
+    | EMMY_LIMITED_NOM_TMDB_IDS
+)
+
+# ---------------------------------------------------------------------------
+# Emmy winners — hardcoded TMDB IDs
+# Drama, Comedy and Limited Series winners only.
+# ---------------------------------------------------------------------------
+
+EMMY_WINNER_TMDB_IDS: set[int] = {
+    # Comedy
+    247767,  # The Studio
+    124101,  # Hacks
+    136315,  # The Bear
+    97546,   # Ted Lasso
+    61662,   # Schitt's Creek
+    67070,   # Fleabag
+    70796,   # The Marvelous Mrs Maisel
+    2947,    # Veep
+    1421,    # Modern Family
+    4608,    # 30 Rock
+    2316,    # The Office
+    2140,    # Everybody Loves Raymond
+    4589,    # Arrested Development
+    1668,    # Friends
+    105,     # Sex and the City
+    4454,    # Will & Grace
+    1480,    # Ally McBeal
+    3452,    # Frasier
+    1400,    # Seinfeld
+    3219,    # Murphy Brown
+    141,     # Cheers
+    4500,    # The Wonder Years
+    1678,    # The Golden Girls
+    1759,    # The Cosby Show
+    3253,    # Barney Miller
+    2251,    # Taxi
+    1922,    # All in the Family
+    2962,    # The Mary Tyler Moore Show
+    918,     # M*A*S*H
+    582,     # My World and Welcome to It
+    # Drama
+    250307,  # The Pitt
+    126308,  # Shogun
+    76331,   # Succession
+    65494,   # The Crown
+    1399,    # Game of Thrones
+    69478,   # The Handmaid's Tale
+    1396,    # Breaking Bad
+    1407,    # Homeland
+    1104,    # Mad Men
+    1398,    # The Sopranos
+    1973,    # 24
+    4607,    # Lost
+    688,     # The West Wing
+    3050,    # The Practice
+    549,     # Law & Order
+    4588,    # ER
+    194,     # NYPD Blue
+    206,     # Picket Fences
+    4396,    # Northern Exposure
+    732,     # L.A. Law
+    1448,    # thirtysomething
+    4223,    # Cagney & Lacey
+    3828,    # Hill Street Blues
+    480,     # Lou Grant
+    954,     # The Rockford Files
+    492,     # Upstairs Downstairs
+    9855,    # Police Story
+    5021,    # The Waltons
+    1103,    # Elizabeth R
+    3213,    # Marcus Welby M.D.
+    # Limited Series
+    249042,  # Adolescence
+    154385,  # Beef
+    111803,  # The White Lotus
+    87739,   # The Queen's Gambit
+    79788,   # Watchmen
+    87108,   # Chernobyl
+    64513,   # American Crime Story
+    66292,   # Big Little Lies
+    61585,   # Olive Kitteridge
+    60622,   # Fargo
+    33907,   # Downton Abbey
+    16997,   # The Pacific
+    13561,   # Little Dorrit
+    15114,   # John Adams
+    20056,   # Broken Trail
+    13291,   # Elizabeth I
+    13688,   # The Lost Prince
+    11245,   # Angels in America
+    2432,    # Taken
+    4613,    # Band of Brothers
+    21276,   # Anne Frank: The Whole Story
+    20658,   # Arabian Nights
+    814,     # Hornblower
+    3556,    # From the Earth to the Moon
+    11121,   # The Odyssey
+    13675,   # Gulliver's Travels
+}
+
+
+# ---------------------------------------------------------------------------
+# Award parsing from MDblist keywords
+# ---------------------------------------------------------------------------
+
+def parse_mdblist_awards(
+    keywords: list[dict],
+    tmdb_id: int | str | None = None,
+) -> tuple[list[str], list[str]]:
+    """
+    Derive award wins and nominations from MDblist keyword objects.
+
+    Best Picture wins/noms come from keywords:
+        best-picture-winner   → win
+        best-picture-nominated → nom
+
+    Emmy wins come from the hardcoded EMMY_WINNER_TMDB_IDS set.
+    Emmy noms come from EMMY_DRAMA/COMEDY/LIMITED_NOM_TMDB_IDS — Outstanding
+    Series categories only, replacing the broad emmy-award-nominated keyword
+    which fired on acting/directing/writing nominations too.
+
+    Golden Globe wins/noms cover all top film and TV categories via the
+    combined _GG_ALL_WINNERS / _GG_ALL_NOMS sets.
+
+    Returns (wins, noms) where each is a list of human-readable strings.
+    """
+    keyword_names: set[str] = {
+        (kw.get("name") or "").lower().strip()
+        for kw in keywords
+    }
+
+    wins: list[str] = []
+    noms: list[str] = []
+
+    numeric_tmdb_id: int | None = None
+    if tmdb_id is not None:
+        try:
+            numeric_tmdb_id = int(tmdb_id)
+        except (ValueError, TypeError):
+            pass
+
+    # --- Best Picture (Oscar) ---
+    if "best-picture-winner" in keyword_names:
+        wins.append("Best Picture")
+    elif "best-picture-nominated" in keyword_names:
+        noms.append("Best Picture")
+
+    # --- Golden Globe (all top film + TV categories) ---
+    if numeric_tmdb_id is not None:
+        if numeric_tmdb_id in _GG_ALL_WINNERS:
+            wins.append("Golden Globe")
+        elif numeric_tmdb_id in _GG_ALL_NOMS:
+            noms.append("Golden Globe")
+
+    # --- Emmy ---
+    if numeric_tmdb_id is not None and numeric_tmdb_id in EMMY_WINNER_TMDB_IDS:
+        wins.append("Emmy Winner")
+    elif numeric_tmdb_id is not None and numeric_tmdb_id in _EMMY_ALL_NOMS:
+        noms.append("Emmy Nominee")
+
+    return wins, noms
+
+
+# ---------------------------------------------------------------------------
+# Sash drawing
+# ---------------------------------------------------------------------------
+
+def _text_center(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.ImageFont,
+    cx: float,
+    cy: float,
+) -> tuple[float, float]:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    bbox_width = bbox[2] - bbox[0]
+
+    try:
+        ascent, descent = font.getmetrics()
+    except AttributeError:
+        ascent, descent = 0, 0
+
+    x = cx - bbox_width / 2 - bbox[0]
+    optical_adjust = int(ascent * 0.22)
+    y = cy - (ascent + descent) / 2 - descent + optical_adjust
+
+    return x, y
+
+
+def _sash_body_cairo(
+    sl: int,
+    sh: int,
+    hi: tuple[int, int, int, int],
+    lo: tuple[int, int, int, int],
+    border_colour: tuple[int, int, int, int],
+    margin: int,
+    edge: int,
+) -> "Image.Image | None":
+    """
+    Cairo-rasterised sash body used only when muted=True.
+
+    The muted path scales the final sash's alpha by 0.8, which amplifies
+    differences in edge softness — cairo's properly antialiased fills
+    survive the rotation + downsample with cleaner edges than PIL's
+    per-row line draw, so the muted look is visibly nicer.
+
+    Default (un-muted) renders use the PIL path because the visual
+    difference is sub-perceptual there and PIL is ~4x faster on this body.
+    Returns None if pycairo is unavailable so the caller can fall back.
+    """
+    if not _HAS_CAIRO:
+        return None
+
+    surface = _cairo.ImageSurface(_cairo.FORMAT_ARGB32, sl, sh)
+    ctx     = _cairo.Context(surface)
+    ctx.set_antialias(_cairo.ANTIALIAS_BEST)
+
+    grad = _cairo.LinearGradient(0, 0, 0, sh)
+    grad.add_color_stop_rgba(0.0, lo[0] / 255, lo[1] / 255, lo[2] / 255, lo[3] / 255)
+    grad.add_color_stop_rgba(0.5, hi[0] / 255, hi[1] / 255, hi[2] / 255, hi[3] / 255)
+    grad.add_color_stop_rgba(1.0, lo[0] / 255, lo[1] / 255, lo[2] / 255, lo[3] / 255)
+    ctx.set_source(grad)
+    ctx.rectangle(0, 0, sl, sh)
+    ctx.fill()
+
+    ctx.set_source_rgba(8 / 255, 8 / 255, 14 / 255, 245 / 255)
+    ctx.rectangle(0, margin, sl, sh - 2 * margin)
+    ctx.fill()
+
+    br, bg, bb, ba = border_colour
+    ctx.set_source_rgba(br / 255, bg / 255, bb / 255, ba / 255)
+    ctx.rectangle(0, 0, sl, edge)
+    ctx.fill()
+    ctx.rectangle(0, sh - edge, sl, edge)
+    ctx.fill()
+
+    surface.flush()
+
+    # ARGB32 → RGBA. Body is always fully opaque, so a plain channel swap is
+    # sufficient (no un-premultiplication needed). Stride may exceed sl*4 for
+    # SIMD alignment so we crop before reshaping.
+    stride = surface.get_stride()
+    buf    = bytes(surface.get_data())
+    arr    = np.frombuffer(buf, dtype=np.uint8).reshape((sh, stride))[:, : sl * 4]
+    arr    = arr.reshape((sh, sl, 4))
+    rgba   = arr[:, :, [2, 1, 0, 3]].copy()
+    return Image.fromarray(rgba, "RGBA")
+
+
+# Awards whose winner and nominee share the same label text (see
+# parse_mdblist_awards), so the notch badge — which can't use colour for win/nom
+# because notch_style owns the trim colour — prefixes a ★ to mark the winner,
+# mirroring the star convention in score/compact modes.  Emmy is excluded (its
+# labels already say "Winner"/"Nominee"); festival winners are intentionally
+# left unmarked.  Strings must match the labels emitted by parse_mdblist_awards.
+_STAR_WIN_AWARDS = {"Best Picture", "Golden Globe"}
+
+
+def sample_frosted_notch_rgb(
+    image: Image.Image,
+    label: str,
+    sash_type: str = "win",
+    size_ratio_w: float = 1.0,
+    size_ratio_h: float = 1.0,
+    font_size_ratio: float = 0.43,
+    notch_inset: float = 0.004,
+    star: bool | None = None,
+) -> tuple[float, float, float]:
+    """Dominant RGB the frosted notch would sample from its crop region.
+
+    Replicates draw_award_badge's geometry + sampling so the colour-matching
+    logic upstream can compare it against the frosted bar.  Keep the constants
+    here in sync with draw_award_badge.  `star` overrides the ★ decision when
+    the caller already resolved it on the canonical (pre-translation) label.
+    """
+    width, height = image.size
+    SS = 3
+    if star if star is not None else (sash_type == "win" and label in _STAR_WIN_AWARDS):
+        label = f"★  {label}"
+
+    badge_h = int(height * 0.075 * size_ratio_h)
+    _fonts_dir   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    font_size_ss = int(badge_h * font_size_ratio) * SS
+    try:
+        font = ImageFont.truetype(os.path.join(_fonts_dir, "Inter-Bold.ttf"), font_size_ss)
+    except IOError:
+        font = ImageFont.load_default()
+
+    _tmp_d    = ImageDraw.Draw(Image.new("L", (1, 1)))
+    _tbbox    = _tmp_d.textbbox((0, 0), label, font=font)
+    text_w_ss = _tbbox[2] - _tbbox[0]
+
+    _h_pad      = int(badge_h * 0.70)
+    min_badge_w = int(width * 0.28 * size_ratio_w)
+    max_badge_w = int(width * 0.70)
+    badge_w     = max(min_badge_w, min(max_badge_w, text_w_ss // SS + _h_pad))
+
+    bx = (width - badge_w) // 2
+    by_composite = max(-badge_h, int(height * notch_inset))
+    crop_y = max(0, by_composite)
+    region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
+    blurred = region.filter(ImageFilter.GaussianBlur(radius=max(4, int(badge_h * 0.35))))
+    thumb = blurred.resize((8, 8), Image.LANCZOS).convert("RGB")
+    arr = np.array(thumb, dtype=np.float32)
+    return float(arr[:, :, 0].mean()), float(arr[:, :, 1].mean()), float(arr[:, :, 2].mean())
+
+
+def draw_award_badge(
+    image: Image.Image,
+    label: str,
+    sash_type: str = "win",        # kept for colour wiring — may be used by future styles
+    size_ratio_w: float = 1.0,     # horizontal scale multiplier
+    size_ratio_h: float = 1.0,     # vertical scale multiplier
+    notch_style: str = "frosted",     # "silver" | "gold" | "frosted"
+    notch_inset: float = 0.004,        # top-edge offset as fraction of poster height (± small)
+    font_size_ratio: float = 0.43,    # font size as fraction of badge height
+    frost_opacity: float = 0.75,      # frosted overlay opacity (0.0–1.0)
+    tint_rgb: tuple[float, float, float] | None = None,  # override sampled colour (frosted)
+    star: bool | None = None,         # override ★ decision (resolved on canonical label)
+) -> Image.Image:
+    """
+    Centred notch badge that emerges from the top edge of the poster.
+    Always horizontally centred; notch_inset nudges it up/down so users
+    can control whether the top border is hidden or visible in their client.
+
+    Three styles:
+      silver  — dark gradient body with silver trim, white text
+      gold    — dark gradient body with gold trim, white text
+      frosted — highly opaque blurred poster pixels, dark text
+
+    sash_type colour wiring is retained for future use.
+    Uses Cairo (sub-pixel AA, gradient) with PIL fallback. 3× LANCZOS downscale.
+    """
+    width, height = image.size
+
+    SS = 3  # render at 3× then LANCZOS-downscale for crisp text and edges
+
+    # ── Colour wiring (kept for potential future use by styles) ───────────────
+    if sash_type == "win":
+        border_rgb = (212, 175, 55)
+    elif sash_type == "prestige":
+        border_rgb = (190, 140, 255)
+    elif sash_type == "cast":
+        border_rgb = (102, 187, 106)
+    elif sash_type == "info":
+        border_rgb = (100, 220, 210)
+    elif sash_type == "alert":
+        border_rgb = (240, 100, 100)
+    elif sash_type == "trending":
+        border_rgb = (160, 220, 255)
+    else:  # "nom"
+        border_rgb = (192, 192, 200)
+
+    # Style-specific trim colours (override sash colour for silver/gold)
+    _SILVER = (192, 192, 200)
+    _GOLD   = (212, 175, 55)
+    trim_rgb = _SILVER if notch_style == "silver" else (_GOLD if notch_style == "gold" else border_rgb)
+
+    # Winner marker: for awards whose win/nom labels are identical (Best Picture,
+    # Golden Globe) the trim colour can't disambiguate them in notch mode (the
+    # user's notch_style fixes it), so prefix a ★ for the winner — consistent
+    # with the star in score/compact modes.  The badge width auto-expands to fit.
+    # Double space after the star so it sits clearly left of the text rather than
+    # crowding the first letter.  `star` (when provided) is resolved upstream on
+    # the canonical English label so translated labels still get their marker.
+    if star if star is not None else (sash_type == "win" and label in _STAR_WIN_AWARDS):
+        label = f"★  {label}"
+
+    # ── Dimensions ───────────────────────────────────────────────────────────
+    badge_h = int(height * 0.075 * size_ratio_h)
+    bh      = badge_h * SS  # SS-space height (independent of width)
+
+    # ── Font: fixed size so every label renders at the same scale ────────────
+    _fonts_dir   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    font_size_ss = int(badge_h * font_size_ratio) * SS
+    try:
+        font = ImageFont.truetype(os.path.join(_fonts_dir, "Inter-Bold.ttf"), font_size_ss)
+    except IOError:
+        font = ImageFont.load_default()
+
+    # Measure rendered text width at SS resolution
+    _tmp_d  = ImageDraw.Draw(Image.new("L", (1, 1)))
+    _tbbox  = _tmp_d.textbbox((0, 0), label, font=font)
+    text_w_ss = _tbbox[2] - _tbbox[0]
+
+    # Badge width: minimum is size_ratio_w-scaled default; expands to fit text
+    # with horizontal padding of ~45% of badge_h (22.5% each side).
+    _h_pad    = int(badge_h * 0.70)
+    min_badge_w = int(width * 0.28 * size_ratio_w)
+    max_badge_w = int(width * 0.70)
+    badge_w   = max(min_badge_w, min(max_badge_w, text_w_ss // SS + _h_pad))
+
+    radius   = int(badge_h * 0.32)
+    border_w = max(1, int(badge_h * 0.055))
+    bw    = badge_w * SS
+    r_ss  = radius   * SS
+    bw_ss = border_w * SS
+
+    # ── Position: always centred horizontally, inset controls top-edge offset ─
+    bx = (width - badge_w) // 2
+    by_composite = max(-badge_h, int(height * notch_inset))
+
+    # Text is geometrically centred; client-specific placement is handled by inset.
+    text_cy_ss = bh / 2
+
+    if notch_style == "frosted":
+        # ── Frosted: blurred poster crop tinted toward the region's dominant colour ──
+        # Crop from the actual composite position so the blur matches what's visible
+        crop_y = max(0, by_composite)
+        region = image.crop((bx, crop_y, bx + badge_w, crop_y + badge_h))
+        blur_r = max(4, int(badge_h * 0.35))
+        blurred = region.filter(ImageFilter.GaussianBlur(radius=blur_r))
+        blurred_ss = blurred.resize((bw, bh), Image.LANCZOS).convert("RGBA")
+
+        # Sample dominant colour from the (lightly blurred) region — use a small
+        # thumbnail so the mean is fast and noise-free.  tint_rgb (when supplied)
+        # overrides the colour so the notch can match the frosted rating bar.
+        if tint_rgb is not None:
+            dr, dg, db = tint_rgb
+        else:
+            thumb = blurred.resize((8, 8), Image.LANCZOS).convert("RGB")
+            arr_thumb = np.array(thumb, dtype=np.float32)
+            dr, dg, db = arr_thumb[:, :, 0].mean(), arr_thumb[:, :, 1].mean(), arr_thumb[:, :, 2].mean()
+
+        # Boost toward a bright, saturated version of that colour so the tint
+        # reads clearly: push V toward 1.0 while keeping H+S, then mix 60 % of
+        # that tint with 40 % white so very dark posters still look "frosted".
+        import colorsys as _cs
+        _h, _s, _v = _cs.rgb_to_hsv(dr / 255, dg / 255, db / 255)
+        _v_boost = _v * 0.4 + 0.60          # floor V at 60% so dark regions lift
+        _s_boost = min(1.0, _s * 1.2)       # slightly push saturation
+        tr, tg, tb = _cs.hsv_to_rgb(_h, _s_boost, _v_boost)
+        # Mix tinted colour with white (60/40) for the frosted feel
+        fr_r = int(tr * 255 * 0.6 + 255 * 0.4)
+        fr_g = int(tg * 255 * 0.6 + 255 * 0.4)
+        fr_b = int(tb * 255 * 0.6 + 255 * 0.4)
+
+        # Notch shape mask (square top, rounded bottom)
+        rr_mask_ss = Image.new("L", (bw, bh), 0)
+        ImageDraw.Draw(rr_mask_ss).rounded_rectangle(
+            [(0, 0), (bw - 1, bh - 1)], radius=r_ss, fill=255,
+            corners=(False, False, True, True)
+        )
+        rr_f = np.array(rr_mask_ss, dtype=np.float32) / 255
+
+        # Lay blurred crop under the tinted frost layer (alpha ~210 = quite opaque)
+        blurred_ss.putalpha(rr_mask_ss)
+        frost = Image.new("RGBA", (bw, bh), (fr_r, fr_g, fr_b, 0))
+        frost.putalpha(Image.fromarray((rr_f * frost_opacity * 255).astype(np.uint8), "L"))
+        badge_ss = Image.alpha_composite(blurred_ss, frost)
+
+        # Dark text
+        txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        td = ImageDraw.Draw(txt_layer)
+        tx, ty = _text_center(td, label, font, bw / 2, text_cy_ss)
+        td.text((tx, ty), label, font=font, fill=(0, 0, 0, 245))
+        badge_ss = Image.alpha_composite(badge_ss, txt_layer)
+
+        badge_final = badge_ss.resize((badge_w, badge_h), Image.LANCZOS)
+        result = image.copy()
+        result.alpha_composite(badge_final, (bx, by_composite))
+        return result
+
+    if notch_style == "black":
+        # ── Pure black: dark near-opaque body, no border, silver/white text ──
+        badge_ss = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        rr_mask_ss = Image.new("L", (bw, bh), 0)
+        ImageDraw.Draw(rr_mask_ss).rounded_rectangle(
+            [(0, 0), (bw - 1, bh - 1)], radius=r_ss, fill=255,
+            corners=(False, False, True, True)
+        )
+        body = Image.new("RGBA", (bw, bh), (10, 10, 12, 230))
+        body.putalpha(rr_mask_ss)
+        badge_ss = body
+        txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        td = ImageDraw.Draw(txt_layer)
+        tx, ty = _text_center(td, label, font, bw / 2, text_cy_ss)
+        td.text((tx, ty), label, font=font, fill=(210, 210, 218, 245))
+        badge_ss = Image.alpha_composite(badge_ss, txt_layer)
+        badge_final = badge_ss.resize((badge_w, badge_h), Image.LANCZOS)
+        result = image.copy()
+        result.alpha_composite(badge_final, (bx, by_composite))
+        return result
+
+    body_alpha   = 235
+    border_alpha = 215
+
+    # ── Badge body + border (dark gradient, silver or gold trim) ─────────────
+    # Always notch shape: square top corners, rounded bottom corners.
+    # Cairo path for sub-pixel AA and gradient fill; PIL fallback otherwise.
+    badge: Image.Image | None = None
+
+    if _HAS_CAIRO:
+        try:
+            surface = _cairo.ImageSurface(_cairo.FORMAT_ARGB32, bw, bh)
+            ctx     = _cairo.Context(surface)
+            ctx.set_antialias(_cairo.ANTIALIAS_BEST)
+
+            def _rrect_notch(x: float, y: float, w: float, h: float, r: float) -> None:
+                """Notch shape: square top corners, rounded bottom corners only."""
+                ctx.move_to(x, y)
+                ctx.line_to(x + w, y)
+                ctx.line_to(x + w, y + h - r)
+                ctx.arc(x + w - r, y + h - r, r,  0,           math.pi / 2)
+                ctx.line_to(x + r, y + h)
+                ctx.arc(x + r,     y + h - r, r,  math.pi / 2, math.pi)
+                ctx.line_to(x, y)
+                ctx.close_path()
+
+            ba    = body_alpha / 255
+            inset = bw_ss / 2
+
+            # Dark gradient body (8 → 24 → 8 brightness, slight blue tint)
+            d_lo = 4  / 255
+            d_hi = 14 / 255
+            grad = _cairo.LinearGradient(0, 0, 0, bh)
+            grad.add_color_stop_rgba(0.0, d_lo, d_lo, d_lo * 1.3, ba)
+            grad.add_color_stop_rgba(0.5, d_hi, d_hi, d_hi * 1.3, ba)
+            grad.add_color_stop_rgba(1.0, d_lo, d_lo, d_lo * 1.3, ba)
+            ctx.set_source(grad)
+            _rrect_notch(0, 0, bw, bh, r_ss)
+            ctx.fill()
+            # Open-top trim: sides continue from the poster edge and wrap
+            # around the rounded bottom, but no horizontal line can peek out
+            # when a client crops or rounds the poster top.
+            tr_c, tg_c, tb_c = trim_rgb
+            ctx.set_source_rgba(tr_c / 255, tg_c / 255, tb_c / 255, border_alpha / 255)
+            ctx.set_line_width(bw_ss)
+            trim_r = max(1.0, r_ss - inset)
+            ctx.move_to(inset, 0)
+            ctx.line_to(inset, bh - inset - trim_r)
+            ctx.arc_negative(inset + trim_r, bh - inset - trim_r, trim_r, math.pi, math.pi / 2)
+            ctx.line_to(bw - inset - trim_r, bh - inset)
+            ctx.arc_negative(bw - inset - trim_r, bh - inset - trim_r, trim_r, math.pi / 2, 0)
+            ctx.line_to(bw - inset, 0)
+            ctx.stroke()
+
+            surface.flush()
+            stride = surface.get_stride()
+            buf    = bytes(surface.get_data())
+            arr = (
+                np.frombuffer(buf, dtype=np.uint8)
+                .reshape((bh, stride))[:, : bw * 4]
+                .reshape((bh, bw, 4))
+                .copy()
+            )
+            # Cairo ARGB32 is premultiplied; un-premultiply to get straight RGBA.
+            # Memory order per pixel: [B, G, R, A] (little-endian 32-bit word).
+            a_f    = arr[:, :, 3].astype(np.float32)
+            safe_a = np.where(a_f > 0, a_f, 1.0)
+            r_s = np.clip(arr[:, :, 2].astype(np.float32) * 255.0 / safe_a, 0, 255).astype(np.uint8)
+            g_s = np.clip(arr[:, :, 1].astype(np.float32) * 255.0 / safe_a, 0, 255).astype(np.uint8)
+            b_s = np.clip(arr[:, :, 0].astype(np.float32) * 255.0 / safe_a, 0, 255).astype(np.uint8)
+            rgba  = np.stack([r_s, g_s, b_s, arr[:, :, 3]], axis=2)
+            badge = Image.fromarray(rgba, "RGBA")
+        except Exception:
+            badge = None
+
+    if badge is None:
+        # ── PIL fallback (always notch shape) ─────────────────────────────────
+        t     = np.linspace(0, 1, bh, dtype=np.float32)
+        b_arr = np.zeros((bh, bw, 4), dtype=np.uint8)
+        darkness = (4 + 10 * np.sin(t * np.pi)).astype(np.uint8)
+        b_arr[:, :, 0] = darkness[:, np.newaxis]
+        b_arr[:, :, 1] = darkness[:, np.newaxis]
+        b_arr[:, :, 2] = np.minimum(255, (darkness * 1.3).astype(np.uint8))[:, np.newaxis]
+        b_arr[:, :, 3] = body_alpha
+        body = Image.fromarray(b_arr, "RGBA")
+
+        _nc = dict(corners=(False, False, True, True))
+        body_mask = Image.new("L", (bw, bh), 0)
+        ImageDraw.Draw(body_mask).rounded_rectangle(
+            [(0, 0), (bw - 1, bh - 1)], radius=r_ss, fill=255, **_nc
+        )
+        body.putalpha(body_mask)
+        border_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        border_draw = ImageDraw.Draw(border_layer)
+        border_draw.rounded_rectangle(
+            [(0, 0), (bw - 1, bh - 1)],
+            radius=r_ss, outline=(*trim_rgb, border_alpha), width=bw_ss, **_nc,
+        )
+        # Remove only the horizontal top stroke, retaining both vertical sides.
+        border_draw.rectangle(
+            [(bw_ss, 0), (bw - bw_ss - 1, bw_ss)], fill=(0, 0, 0, 0)
+        )
+        badge = Image.alpha_composite(body, border_layer)
+
+    # ── Text: white on dark body, with drop shadow ───────────────────────────
+    txt_layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+    td = ImageDraw.Draw(txt_layer)
+    tx, ty = _text_center(td, label, font, bw / 2, text_cy_ss)
+    td.text((tx + SS, ty + SS), label, font=font, fill=(0, 0, 0, 160))
+    td.text((tx, ty),           label, font=font, fill=(255, 255, 255, 235))
+    badge = Image.alpha_composite(badge, txt_layer)
+
+    # ── Downscale → composite ────────────────────────────────────────────────
+    badge = badge.resize((badge_w, badge_h), Image.Resampling.LANCZOS)
+    result = image.copy()
+    result.alpha_composite(badge, (bx, by_composite))
+    return result
+
+
+def _frosted_tint(dr: float, dg: float, db: float) -> tuple[int, int, int]:
+    """Poster dominant RGB → the same boosted/whitened tint the frosted notch
+    uses, so the sash / notch / bar all derive a consistent colour."""
+    import colorsys
+    h, s, v = colorsys.rgb_to_hsv(dr / 255, dg / 255, db / 255)
+    tr, tg, tb = colorsys.hsv_to_rgb(h, min(1.0, s * 1.2), v * 0.4 + 0.60)
+    return (int(tr*255*0.6 + 255*0.4), int(tg*255*0.6 + 255*0.4), int(tb*255*0.6 + 255*0.4))
+
+
+def sample_frosted_sash_rgb(image: Image.Image) -> tuple[float, float, float]:
+    """Dominant RGB of the top-right corner region the diagonal sash overlays."""
+    width, height = image.size
+    reg = image.crop((int(width * 0.55), 0, width, int(height * 0.22)))
+    blr = reg.filter(ImageFilter.GaussianBlur(radius=max(6, int(height * 0.02))))
+    th  = blr.resize((8, 8), Image.LANCZOS).convert("RGB")
+    ar  = np.array(th, dtype=np.float32)
+    return float(ar[:, :, 0].mean()), float(ar[:, :, 1].mean()), float(ar[:, :, 2].mean())
+
+
+def draw_award_sash(
+    image: Image.Image,
+    label: str,
+    sash_type: str = "win",
+    muted: bool = False,
+    length_ratio: float = 1.15,
+    height_ratio: float = 0.12,
+    poster_color: tuple[float, float, float] | None = None,
+) -> Image.Image:
+    width, height = image.size
+
+    # SS = supersample factor. 2× supersample + LANCZOS downsample gives edges
+    # and text that are visually indistinguishable from 3× after JPEG, but cuts
+    # the rotation + downsample cost roughly in half (the dominant phases of the
+    # whole sash pipeline). Drop to 1 only if you can also drop the rotation.
+    SS          = 3
+    sash_length = int(width * length_ratio)
+    sash_height = int(width * height_ratio)
+
+    sl, sh = sash_length * SS, sash_height * SS
+
+    if poster_color is not None:
+        # Poster-derived colour: tint the band edges / border from the art (same
+        # logic the frosted notch uses).  The dark centre + light text are kept.
+        _t = _frosted_tint(*poster_color)
+        hi            = (*_t, 255)
+        lo            = tuple(max(0, int(c * 0.6)) for c in _t) + (255,)
+        border_colour = (*_t, 255)
+    elif sash_type == "win":
+        hi, lo        = (212, 175, 55, 255), (160, 130, 40, 255)
+        border_colour = (212, 175, 55, 255)
+    elif sash_type == "prestige":
+        hi, lo        = (160, 100, 230, 255), (100, 55, 160, 255)
+        border_colour = (190, 140, 255, 255)
+    elif sash_type == "cast":
+        hi, lo        = (46, 125, 50, 255), (27, 94, 32, 255)
+        border_colour = (102, 187, 106, 255)
+    elif sash_type == "info":
+        hi, lo        = (60, 190, 180, 255), (30, 130, 120, 255)
+        border_colour = (100, 220, 210, 255)
+    elif sash_type == "alert":
+        hi, lo        = (200, 55, 55, 255), (145, 25, 25, 255)
+        border_colour = (240, 100, 100, 255)
+    elif sash_type == "trending":
+        hi, lo        = (90, 170, 255, 255), (50, 110, 190, 255)
+        border_colour = (160, 220, 255, 255)
+    else:  # "nom"
+        hi, lo        = (180, 180, 190, 255), (110, 110, 120, 255)
+        border_colour = (192, 192, 200, 255)
+
+    margin = int(sh * 0.12)
+    edge   = max(2 * SS, sh // 18)
+
+    # Body rendering: cairo when muted (smoother edges survive the 0.8 alpha
+    # scale visibly), PIL otherwise (sub-perceptual difference + ~4x faster).
+    sash = _sash_body_cairo(sl, sh, hi, lo, border_colour, margin, edge) if muted else None
+    if sash is None:
+        sash = Image.new("RGBA", (sl, sh), (0, 0, 0, 0))
+        d    = ImageDraw.Draw(sash)
+        half = sh // 2
+        for y in range(sh):
+            t = y / half if y < half else (sh - y) / half
+            colour = tuple(int(lo[i] * (1 - t) + hi[i] * t) for i in range(4))
+            d.line([(0, y), (sl, y)], fill=colour)
+        d.rectangle([(0, margin), (sl, sh - margin)], fill=(8, 8, 8, 245))
+        d.rectangle([(0, 0), (sl, edge)], fill=border_colour)
+        d.rectangle([(0, sh - edge), (sl, sh)], fill=border_colour)
+
+    base_size     = sash_height * 0.4
+    adjusted_size = sash_height * 0.85 / (len(label) ** 0.35)
+    font_size     = int(min(base_size, adjusted_size)) * SS
+
+    try:
+        font = ImageFont.truetype(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "Inter-Bold.ttf"), font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    band_cx = sl / 2
+    band_cy = margin + (sh - 2 * margin) / 2
+
+    text_layer = Image.new("RGBA", sash.size, (0, 0, 0, 0))
+    td         = ImageDraw.Draw(text_layer)
+
+    tx, ty = _text_center(td, label, font, band_cx, band_cy)
+    td.text((tx + 2 * SS, ty + 2 * SS), label, font=font, fill=(0, 0, 0, 180))
+    td.text((tx, ty),                   label, font=font, fill=(225, 225, 225, 225))
+
+    sash = Image.alpha_composite(sash, text_layer)
+
+    sash = sash.rotate(-45, expand=True, resample=Image.Resampling.BICUBIC)
+    sash = sash.resize((sash.width // SS, sash.height // SS), Image.Resampling.LANCZOS)
+
+    if muted:
+        # Scale alpha to ~80% — sits level with the art rather than above it,
+        # without making the text hard to read.
+        r, g, b, a = sash.split()
+        a = a.point(lambda v: int(v * 0.8))
+        sash = Image.merge("RGBA", (r, g, b, a))
+
+    shadow   = Image.new("RGBA", sash.size, (0, 0, 0, 0))
+    sd       = ImageDraw.Draw(shadow)
+    sd.bitmap((0, 0), sash.split()[3], fill=(0, 0, 0, 110))
+    shadow   = shadow.filter(ImageFilter.GaussianBlur(10))
+
+    result   = image.copy()
+    offset_x = int(sash.width  * 0.68)
+    offset_y = int(sash.height * 0.32)
+
+    result.paste(shadow, (width - offset_x + 6, -offset_y + 6), shadow)
+    result.paste(sash,   (width - offset_x,     -offset_y),     sash)
+
+    return result

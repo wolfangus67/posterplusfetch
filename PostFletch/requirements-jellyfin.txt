@@ -1,0 +1,13 @@
+# Optional dependencies for jellyfin_sync.py — the Jellyfin companion script.
+#
+# Kept separate from requirements.txt so the core PostersPlus service image
+# stays lean; only install this if you actually intend to run jellyfin_sync.py.
+#
+#   pip install -r requirements.txt -r requirements-jellyfin.txt
+#
+# Unlike plex_sync.py (which needs the third-party `plexapi` package),
+# jellyfin_sync.py talks to Jellyfin's REST API directly with httpx — no
+# Jellyfin SDK required. httpx is already a core PostersPlus dependency;
+# listed here too so this file is sufficient on its own for a standalone
+# install of just the sync script.
+httpx>=0.25,<1.0

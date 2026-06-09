@@ -1,0 +1,40 @@
+{
+  "_readme": [
+    "Copy this file to your cache volume as discovery_overrides.json.",
+    "Default path: ./postersplus-cache/discovery_overrides.json",
+    "Custom path:  set DISCOVERY_OVERRIDES_PATH=/your/path in .env",
+    "",
+    "mode: 'replace' (default) - each section you provide fully replaces the",
+    "  built-in list for that section. Omitted sections are untouched, so you",
+    "  can replace just cast without affecting studios or directors.",
+    "mode: 'merge' - your entries are added on top of the built-in lists.",
+    "  Useful for adding a few names without losing the defaults.",
+    "",
+    "Keys (left) are the exact name as it appears in TMDB credits.",
+    "Values (right) are the display label shown on the sash - keep them short, ideally max 15 characters.",
+    "  Studios:   shown as-is,          e.g. 'A24 Films'",
+    "  Directors: shown as-is ',        e.g. 'Nolan'",
+    "  Cast:      shown as-is,          e.g. 'Cate Blanchett'",
+    "",
+    "Remove the '_readme' key before use (or leave it - it is ignored)."
+  ],
+
+  "mode": "merge",
+
+  "studios": {
+    "Mubi": "MUBI Original",
+    "Netflix": "Netflix Original",
+    "Apple Studios": "Apple Original",
+    "Amazon Studios": "Amazon Original",
+    "Hulu": "Hulu Original",
+    "Disney+": "Disney+ Original"
+  },
+
+  "directors": {
+    "Derrick Ector": "Derrick Ector"
+  },
+
+  "cast": {
+    "Ally Actress": "Ally Actress"
+  }
+}

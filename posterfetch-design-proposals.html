@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PosterFetch - Propositions design</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bricolage+Grotesque:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --ink: #161616;
+      --paper: #f6f0e7;
+      --gold: #d8aa3c;
+      --muted: rgba(255,255,255,.62);
+      --line: rgba(255,255,255,.13);
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+      --grotesk: "Bricolage Grotesque", "Space Grotesk", sans-serif;
+      --display: "DM Serif Display", Georgia, serif;
+      --poster: linear-gradient(155deg, #efc15b, #9d302d 42%, #111 43%, #111);
+    }
+
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(216,170,60,.18), transparent 30%),
+        radial-gradient(circle at 90% 10%, rgba(57,109,255,.18), transparent 32%),
+        #090909;
+      color: white;
+      font-family: var(--grotesk);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px clamp(18px, 4vw, 52px);
+      border-bottom: 1px solid rgba(255,255,255,.1);
+      backdrop-filter: blur(18px);
+      background: rgba(8,8,8,.72);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      letter-spacing: -.03em;
+      font-weight: 700;
+      font-size: 20px;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      background: #f0be48;
+      color: #111;
+      font-family: var(--mono);
+      font-weight: 700;
+      border-radius: 10px 10px 2px 10px;
+    }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .nav a {
+      color: rgba(255,255,255,.76);
+      text-decoration: none;
+      border: 1px solid rgba(255,255,255,.12);
+      padding: 9px 12px;
+      border-radius: 999px;
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .intro {
+      min-height: 62vh;
+      padding: clamp(48px, 8vw, 110px) clamp(18px, 5vw, 72px);
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(280px, .72fr);
+      gap: clamp(24px, 5vw, 80px);
+      align-items: center;
+      overflow: hidden;
+    }
+    .intro h1 {
+      max-width: 940px;
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(54px, 9vw, 142px);
+      line-height: .86;
+      letter-spacing: -.07em;
+    }
+    .intro p {
+      max-width: 620px;
+      color: rgba(255,255,255,.68);
+      font-size: clamp(16px, 2vw, 22px);
+      line-height: 1.55;
+    }
+    .intro-card {
+      position: relative;
+      padding: 22px;
+      min-height: 420px;
+      border: 1px solid rgba(255,255,255,.12);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04)),
+        radial-gradient(circle at 20% 0%, rgba(216,170,60,.35), transparent 35%);
+      border-radius: 34px;
+      box-shadow: 0 28px 80px rgba(0,0,0,.48);
+    }
+    .intro-poster {
+      height: 100%;
+      min-height: 370px;
+      border-radius: 24px;
+      background:
+        linear-gradient(145deg, transparent 0 56%, rgba(0,0,0,.7) 57%),
+        radial-gradient(circle at 44% 32%, #ffe3aa, transparent 15%),
+        linear-gradient(135deg, #21304d, #111 46%, #a3302f 47%, #d7a449);
+      position: relative;
+      overflow: hidden;
+    }
+    .intro-poster:after {
+      content: "4K WEB DV";
+      position: absolute;
+      top: 22px;
+      right: 22px;
+      padding: 9px 12px;
+      background: rgba(0,0,0,.64);
+      border: 1px solid rgba(255,255,255,.24);
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .12em;
+    }
+    .intro-poster strong {
+      position: absolute;
+      left: 24px;
+      bottom: 24px;
+      width: min-content;
+      font-family: "Anton", Impact, sans-serif;
+      font-size: 64px;
+      line-height: .9;
+      letter-spacing: .02em;
+    }
+
+    .proposal {
+      padding: clamp(28px, 5vw, 72px);
+      border-top: 1px solid rgba(255,255,255,.11);
+    }
+    .proposal-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: end;
+      margin-bottom: 24px;
+    }
+    .proposal h2 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(38px, 6vw, 84px);
+      letter-spacing: -.05em;
+      line-height: .9;
+    }
+    .proposal-copy {
+      max-width: 720px;
+      color: rgba(255,255,255,.68);
+      line-height: 1.55;
+      margin: 12px 0 0;
+    }
+    .tag {
+      align-self: center;
+      white-space: nowrap;
+      border: 1px solid currentColor;
+      padding: 10px 13px;
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    .screen {
+      min-height: 680px;
+      border: 1px solid var(--line);
+      box-shadow: 0 35px 90px rgba(0,0,0,.45);
+      overflow: hidden;
+      position: relative;
+    }
+    .app-grid {
+      display: grid;
+      grid-template-columns: 245px minmax(0, 1fr) 340px;
+      min-height: 680px;
+    }
+    .side, .panel, .canvas { padding: 22px; }
+    .side {
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+    .side-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      opacity: .68;
+    }
+    .menu { display: grid; gap: 8px; }
+    .menu button, .small-btn, .pill {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: inherit;
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      padding: 12px 13px;
+      text-align: left;
+    }
+    .menu button.active, .small-btn.active, .pill.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+    .status-list { margin-top: auto; display: grid; gap: 10px; }
+    .status {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--subtle);
+      font: 700 10px/1 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .canvas {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 18px;
+      min-width: 0;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .search {
+      flex: 1 1 280px;
+      border: 1px solid var(--line);
+      padding: 14px 16px;
+      color: var(--subtle);
+      font: 600 12px/1 var(--mono);
+      letter-spacing: .04em;
+    }
+    .preview-stage {
+      display: grid;
+      grid-template-columns: minmax(230px, 330px) minmax(0, 1fr);
+      gap: 24px;
+      align-items: center;
+    }
+    .poster {
+      aspect-ratio: 2/3;
+      border-radius: var(--radius);
+      background: var(--poster);
+      box-shadow: var(--poster-shadow);
+      position: relative;
+      overflow: hidden;
+      min-height: 420px;
+    }
+    .poster:before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 52% 30%, rgba(255,255,255,.8), transparent 9%),
+        radial-gradient(circle at 30% 26%, rgba(255,255,255,.16), transparent 22%),
+        linear-gradient(180deg, transparent 55%, rgba(0,0,0,.78));
+    }
+    .badge {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      padding: 9px 10px;
+      background: var(--badge-bg);
+      color: var(--badge);
+      border: 1px solid var(--badge-line);
+      font: 800 10px/1 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .poster-title {
+      position: absolute;
+      left: 22px;
+      bottom: 22px;
+      width: 70%;
+      font-family: var(--poster-font);
+      font-size: 52px;
+      line-height: .9;
+      letter-spacing: -.03em;
+    }
+    .detail h3 {
+      margin: 0 0 12px;
+      font-size: clamp(34px, 5vw, 72px);
+      line-height: .88;
+      letter-spacing: -.06em;
+    }
+    .detail p { color: var(--subtle); line-height: 1.55; max-width: 520px; }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 22px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      padding: 16px;
+      background: var(--surface);
+    }
+    .metric b { display: block; font-size: 26px; letter-spacing: -.04em; }
+    .metric span { display: block; margin-top: 6px; color: var(--subtle); font: 700 10px/1.3 var(--mono); text-transform: uppercase; }
+    .panel {
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      display: grid;
+      align-content: start;
+      gap: 14px;
+    }
+    .section-card {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 16px;
+      border-radius: var(--card-radius);
+    }
+    .section-card h4 {
+      margin: 0 0 12px;
+      font: 800 12px/1 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .field label {
+      color: var(--subtle);
+      font: 800 10px/1 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .input {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      background: var(--input);
+      color: var(--subtle);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      font: 600 11px/1 var(--mono);
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .catalog-list { display: grid; gap: 8px; margin-top: 12px; }
+    .catalog-row {
+      border: 1px solid var(--line);
+      background: var(--input);
+      padding: 11px 12px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      font: 700 11px/1.2 var(--mono);
+    }
+    .catalog-row span { color: var(--subtle); font-size: 9px; display: block; margin-top: 4px; }
+    .toggle {
+      width: 32px;
+      height: 18px;
+      border: 1px solid var(--accent);
+      position: relative;
+    }
+    .toggle:after {
+      content: "";
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      top: 3px;
+      right: 3px;
+      background: var(--accent);
+    }
+
+    /* Propal 1 */
+    .p1 {
+      --accent: #d8aa3c;
+      --accent-soft: rgba(216,170,60,.14);
+      --subtle: rgba(238,228,201,.62);
+      --surface: rgba(255,255,255,.035);
+      --panel: rgba(11,11,11,.84);
+      --input: rgba(255,255,255,.035);
+      --radius: 4px;
+      --card-radius: 0;
+      --poster-shadow: 0 26px 70px rgba(0,0,0,.55);
+      --badge-bg: #111;
+      --badge: #f2c75e;
+      --badge-line: rgba(216,170,60,.8);
+      --poster-font: "Anton", Impact, sans-serif;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px) 0 0/52px 52px,
+        radial-gradient(circle at 65% 10%, rgba(216,170,60,.18), transparent 34%),
+        #0d0c0a;
+    }
+    .p1 .screen-title { font-family: var(--display); font-size: 42px; letter-spacing: -.05em; }
+
+    /* Propal 2 */
+    .p2 {
+      --accent: #41f0cf;
+      --accent-soft: rgba(65,240,207,.12);
+      --subtle: rgba(208,246,239,.66);
+      --surface: rgba(194,255,246,.06);
+      --panel: rgba(4,31,35,.72);
+      --input: rgba(8,54,61,.62);
+      --radius: 28px;
+      --card-radius: 22px;
+      --poster-shadow: 0 30px 80px rgba(15,255,207,.13), 0 35px 90px rgba(0,0,0,.42);
+      --badge-bg: rgba(5,30,35,.74);
+      --badge: #91ffed;
+      --badge-line: rgba(65,240,207,.72);
+      --poster-font: "Space Grotesk", sans-serif;
+      background:
+        radial-gradient(circle at 20% 18%, rgba(65,240,207,.16), transparent 30%),
+        radial-gradient(circle at 80% 0%, rgba(60,104,255,.24), transparent 32%),
+        linear-gradient(140deg, #061f25, #081016 52%, #0f1d35);
+      border-radius: 34px;
+    }
+    .p2 .screen { border-radius: 34px; }
+    .p2 .menu button, .p2 .small-btn, .p2 .pill { border-radius: 999px; text-align: center; }
+    .p2 .search { border-radius: 999px; }
+    .p2 .poster { background: linear-gradient(155deg, #41f0cf, #1c4b80 42%, #0b121a 43%, #132f48); }
+
+    /* Propal 3 */
+    .p3 {
+      --accent: #b3532e;
+      --accent-soft: rgba(179,83,46,.1);
+      --subtle: rgba(42,37,30,.62);
+      --surface: rgba(255,255,255,.54);
+      --panel: #eee4d4;
+      --input: rgba(255,255,255,.58);
+      --line: rgba(37,31,24,.16);
+      --radius: 18px;
+      --card-radius: 18px;
+      --poster-shadow: 0 28px 70px rgba(77,50,24,.22);
+      --badge-bg: #fff8ec;
+      --badge: #a74629;
+      --badge-line: rgba(179,83,46,.4);
+      --poster-font: var(--display);
+      background:
+        linear-gradient(90deg, rgba(37,31,24,.04) 1px, transparent 1px) 0 0/42px 42px,
+        #f4ebdd;
+      color: #241d18;
+    }
+    .p3 .screen {
+      background: #f8f1e8;
+      border-radius: 28px;
+      box-shadow: 0 40px 90px rgba(82,57,33,.18);
+    }
+    .p3 .poster { background: linear-gradient(155deg, #f4bd57, #b3532e 46%, #312018 47%, #f7e4c2); }
+    .p3 .menu button, .p3 .small-btn, .p3 .pill { border-radius: 14px; }
+
+    /* Propal 4 */
+    .p4 {
+      --accent: #ff4fd8;
+      --accent-soft: rgba(255,79,216,.16);
+      --subtle: rgba(255,221,249,.65);
+      --surface: rgba(255,255,255,.055);
+      --panel: rgba(27,11,39,.82);
+      --input: rgba(255,255,255,.05);
+      --radius: 20px;
+      --card-radius: 16px;
+      --poster-shadow: 0 0 60px rgba(255,79,216,.2), 0 32px 90px rgba(0,0,0,.55);
+      --badge-bg: rgba(39,9,50,.86);
+      --badge: #ffdd42;
+      --badge-line: rgba(255,221,66,.76);
+      --poster-font: "Anton", Impact, sans-serif;
+      background:
+        linear-gradient(120deg, rgba(255,79,216,.12), transparent 34%),
+        linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px) 0 0/38px 38px,
+        linear-gradient(0deg, rgba(255,255,255,.04) 1px, transparent 1px) 0 0/38px 38px,
+        #120717;
+    }
+    .p4 .screen { border-radius: 22px; }
+    .p4 .poster { background: linear-gradient(155deg, #ff4fd8, #6548ff 42%, #090512 43%, #ffdd42); }
+    .p4 .screen-title, .p4 h3 { font-family: "Anton", Impact, sans-serif; letter-spacing: .01em; }
+
+    @media (max-width: 1150px) {
+      .intro { grid-template-columns: 1fr; }
+      .app-grid { grid-template-columns: 205px minmax(0, 1fr); }
+      .panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .topbar { position: relative; align-items: flex-start; flex-direction: column; }
+      .proposal-head { grid-template-columns: 1fr; }
+      .app-grid { grid-template-columns: 1fr; }
+      .side { border-right: 0; border-bottom: 1px solid var(--line); }
+      .preview-stage { grid-template-columns: 1fr; }
+      .poster { min-height: 360px; }
+      .panel { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">PF</span>PosterFetch design board</div>
+    <nav class="nav">
+      <a href="#propal-1">Propal 1</a>
+      <a href="#propal-2">Propal 2</a>
+      <a href="#propal-3">Propal 3</a>
+      <a href="#propal-4">Propal 4</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <h1>Quatre directions pour sortir du configurateur austere.</h1>
+        <p>Chaque proposition garde l'idee centrale de PosterPlus + fetching: preview poster, qualite AIOStreams, prefetch catalogue, selection Home/Movie/Series/Mixed. Le but ici est de choisir une ambiance globale avant d'attaquer l'integration.</p>
+      </div>
+      <div class="intro-card">
+        <div class="intro-poster"><strong>POSTER FETCH</strong></div>
+      </div>
+    </section>
+
+    <section class="proposal p1" id="propal-1">
+      <div class="proposal-head">
+        <div>
+          <h2>Proposition 1<br>Cinema atelier</h2>
+          <p class="proposal-copy">Une evolution naturelle de l'existant: noir profond, or, typographie cinema, panneaux stricts. Plus premium, moins bricolage, sans perdre le cote outil.</p>
+        </div>
+        <span class="tag">Le choix safe premium</span>
+      </div>
+      <div class="screen">
+        <div class="app-grid">
+          <aside class="side">
+            <div class="side-title">PosterFetch</div>
+            <div class="menu">
+              <button class="active">Preview</button>
+              <button>Quality</button>
+              <button>Prefetch</button>
+              <button>Catalogues</button>
+              <button>Manifest</button>
+            </div>
+            <div class="status-list">
+              <div class="status"><span>AIOStreams</span><b>Ready</b></div>
+              <div class="status"><span>Cache</span><b>6 hits</b></div>
+              <div class="status"><span>Home</span><b>8 cats</b></div>
+            </div>
+          </aside>
+          <section class="canvas">
+            <div class="toolbar">
+              <div class="screen-title">Live poster room</div>
+              <div class="search">Toy Story 2 / tt0120363</div>
+            </div>
+            <div class="preview-stage">
+              <div class="poster"><div class="badge">1080P WEB</div><div class="poster-title">TOY STORY</div></div>
+              <div class="detail">
+                <h3>Controler le rendu avant de copier le lien.</h3>
+                <p>Le panneau garde une lecture directe: poster au centre, config a droite, navigation calme. Les badges qualite deviennent visibles sans voler la vedette.</p>
+                <div class="metric-grid">
+                  <div class="metric"><b>522</b><span>Catalogues charges</span></div>
+                  <div class="metric"><b>8</b><span>Home visibles</span></div>
+                  <div class="metric"><b>HD</b><span>Minimum web</span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="section-card">
+              <h4>Quality manifest</h4>
+              <div class="field"><label>AIOStreams</label><div class="input">https://aiostreams.../manifest.json</div></div>
+              <div class="field"><label>Minimum</label><div class="input">HD Web</div></div>
+            </div>
+            <div class="section-card">
+              <h4>Selection catalogue</h4>
+              <div class="menu"><button class="active">Tout</button><button>Films</button><button>Series</button><button>Mixed</button></div>
+              <div class="catalog-list">
+                <div class="catalog-row">Derniers films pour toi <span>Movie · Home</span><i class="toggle"></i></div>
+                <div class="catalog-row">Recommendations I.A <span>Movie · Home</span><i class="toggle"></i></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="proposal p2" id="propal-2">
+      <div class="proposal-head">
+        <div>
+          <h2>Proposition 2<br>Control room</h2>
+          <p class="proposal-copy">Plus moderne et technique: verre sombre, cyan, coins ronds, sensation "dashboard de scan". Bien si on veut assumer le cote automation/prefetch.</p>
+        </div>
+        <span class="tag">Le choix tech clair</span>
+      </div>
+      <div class="screen">
+        <div class="app-grid">
+          <aside class="side">
+            <div class="side-title">Signal board</div>
+            <div class="menu"><button class="active">Overview</button><button>Quality</button><button>Scheduler</button><button>Catalog scope</button></div>
+            <div class="status-list"><div class="status"><span>Stream source</span><b>AIO</b></div><div class="status"><span>Run</span><b>03:00</b></div></div>
+          </aside>
+          <section class="canvas">
+            <div class="toolbar"><div class="screen-title">Quality scanner</div><div class="search">Search a movie, series, imdb id...</div></div>
+            <div class="preview-stage">
+              <div class="poster"><div class="badge">4K WEB DV</div><div class="poster-title">NEXUS</div></div>
+              <div class="detail">
+                <h3>Une interface qui donne confiance au scan.</h3>
+                <p>Le design rend les operations visibles: source, cache, selection, warm-up. C'est plus rond, plus lumineux, et tres lisible sur ecran large.</p>
+                <div class="metric-grid"><div class="metric"><b>96%</b><span>Cache only</span></div><div class="metric"><b>4</b><span>Home movies</span></div><div class="metric"><b>4</b><span>Home series</span></div></div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="section-card"><h4>Warm-up scope</h4><div class="menu"><button class="active">Home</button><button>Movie</button><button>Series</button><button>Mixed</button></div></div>
+            <div class="section-card"><h4>Live source</h4><div class="field"><label>Manifest</label><div class="input">AIOStreams configured</div></div></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="proposal p3" id="propal-3">
+      <div class="proposal-head">
+        <div>
+          <h2>Proposition 3<br>Studio editorial</h2>
+          <p class="proposal-copy">Une version claire, presque magazine. Moins "admin dark", plus confortable pour configurer longtemps. Les posters ressortent fort sur fond papier.</p>
+        </div>
+        <span class="tag">Le choix lisibilite</span>
+      </div>
+      <div class="screen">
+        <div class="app-grid">
+          <aside class="side">
+            <div class="side-title">Poster studio</div>
+            <div class="menu"><button class="active">Composer</button><button>Affiche</button><button>Qualite</button><button>Prefetch</button></div>
+            <div class="status-list"><div class="status"><span>Selection</span><b>8/522</b></div><div class="status"><span>Mode</span><b>Home</b></div></div>
+          </aside>
+          <section class="canvas">
+            <div class="toolbar"><div class="screen-title">Poster Composer</div><div class="search">Manifest catalogue charge</div></div>
+            <div class="preview-stage">
+              <div class="poster"><div class="badge">HD WEB</div><div class="poster-title">YOROI</div></div>
+              <div class="detail">
+                <h3>Un outil calme, lisible, presque editorial.</h3>
+                <p>Cette direction rend l'app moins agressive. Elle fonctionne bien si l'objectif est d'avoir un configurateur propre, partageable, et facile a comprendre.</p>
+                <div class="metric-grid"><div class="metric"><b>Movie</b><span>Selection directe</span></div><div class="metric"><b>Home</b><span>Surfiltre toggle</span></div><div class="metric"><b>Mixed</b><span>Support natif</span></div></div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="section-card"><h4>Catalogue</h4><div class="catalog-list"><div class="catalog-row">Decouverte <span>Movie · Home</span><i class="toggle"></i></div><div class="catalog-row">Parce que tu as regarde <span>Series · Home</span><i class="toggle"></i></div></div></div>
+            <div class="section-card"><h4>Sortie</h4><div class="input">Lien Stremio pret a copier</div></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="proposal p4" id="propal-4">
+      <div class="proposal-head">
+        <div>
+          <h2>Proposition 4<br>Poster arcade</h2>
+          <p class="proposal-copy">Plus audacieux: neon, grille, energie media-center. Le cote fun ressort davantage, avec une interface qui semble vivante et moins conventionnelle.</p>
+        </div>
+        <span class="tag">Le choix marque forte</span>
+      </div>
+      <div class="screen">
+        <div class="app-grid">
+          <aside class="side">
+            <div class="side-title">Poster arcade</div>
+            <div class="menu"><button class="active">Live</button><button>Badges</button><button>Sources</button><button>Catalogues</button></div>
+            <div class="status-list"><div class="status"><span>Quality</span><b>4K</b></div><div class="status"><span>Prefetch</span><b>Armed</b></div></div>
+          </aside>
+          <section class="canvas">
+            <div class="toolbar"><div class="screen-title">Live badge arena</div><div class="search">AIOStreams cache hit · 1080P WEB</div></div>
+            <div class="preview-stage">
+              <div class="poster"><div class="badge">4K REMUX</div><div class="poster-title">PULSE</div></div>
+              <div class="detail">
+                <h3>Une app qui a une identite immediate.</h3>
+                <p>Cette piste est moins sage, mais elle peut donner a PosterFetch un look vraiment reconnaissable, surtout pour une interface orientee posters et streaming.</p>
+                <div class="metric-grid"><div class="metric"><b>522</b><span>Total</span></div><div class="metric"><b>8</b><span>Home</span></div><div class="metric"><b>1</b><span>Lien final</span></div></div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel">
+            <div class="section-card"><h4>Quick select</h4><div class="menu"><button class="active">All visible</button><button>Movie</button><button>Series</button><button>Mixed</button></div></div>
+            <div class="section-card"><h4>Live logs</h4><div class="catalog-list"><div class="catalog-row">Using metadata <span>Toy Story 2 · 1999</span><i class="toggle"></i></div><div class="catalog-row">Cached stream found <span>1080P WEB</span><i class="toggle"></i></div></div></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Upper bounds pin to the next major so a breaking release on any of these
+# can't silently brick the image on a CI rebuild.  Lower bounds are set to
+# the oldest version known to support the APIs we use (FastAPI lifespan,
+# Pillow's Resampling.LANCZOS, the httpx 0.25 AsyncClient surface).
+fastapi>=0.100,<1.0
+uvicorn>=0.20,<1.0
+Pillow>=10.0,<12
+httpx>=0.25,<1.0
+numpy>=1.26,<3
+pycairo>=1.25,<2
+# Rasterises SVG title logos (TMDB serves many of its highest-voted logos as SVG).
+# Pulls cairocffi/tinycss2/cssselect2; cairo runtime lib is already in the image.
+cairosvg>=2.7,<3
+# Face detection and PP-OCRv5 Mobile burned-in-text detection.
+# RapidOCR declares GUI OpenCV; Docker removes that wheel and keeps headless.
+opencv-python-headless>=4.8,<5
+onnxruntime>=1.17,<2
+rapidocr>=3.8,<4

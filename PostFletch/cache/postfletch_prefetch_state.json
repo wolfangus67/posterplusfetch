@@ -1,0 +1,42 @@
+{
+  "config": {
+    "enabled": true,
+    "catalog_manifest_url": "",
+    "stream_manifest_url": "",
+    "run_time": "03:00",
+    "days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "limit": 500,
+    "per_catalog_limit": 100,
+    "schedule_enabled": true
+  },
+  "catalogs": {
+    "loaded": [],
+    "selected": []
+  },
+  "runtime": {
+    "state": "idle",
+    "message": "En attente",
+    "progress": 0.0,
+    "total_catalogs": 0,
+    "processed_catalogs": 0,
+    "processed_items": 0,
+    "cached_items": 0,
+    "requests_sent": 0,
+    "errors": 0,
+    "running_catalog": "",
+    "started_at": null,
+    "finished_at": null,
+    "last_run": null,
+    "next_run": null,
+    "stop_requested": false
+  },
+  "logs": []
+}

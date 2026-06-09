@@ -1,0 +1,39 @@
+services:
+  postersplus:
+    build:
+      context: .
+      dockerfile: ./dockerfile
+      args:
+        # Bake the PP-OCRv5 Mobile detector into the image (default). Set
+        # BAKE_PPOCR_MODEL=false in your .env for a lean image that downloads the
+        # model once at runtime instead.
+        BAKE_PPOCR_MODEL: "${BAKE_PPOCR_MODEL:-true}"
+    image: PostersPlus
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ./postersplus-cache:/app/cache  # cache DB, TMDB posters/logos, discovery_overrides.json
+    env_file:
+      - .env # see this file for an explanation of what each flag does
+    environment: 
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - MDBLIST_API_KEY=${MDBLIST_API_KEY:-}
+      - ACCESS_KEY=${ACCESS_KEY:-}
+      - WORKERS=${WORKERS:-1}
+      - TEXTLESS_DETECTION_CONCURRENCY=${TEXTLESS_DETECTION_CONCURRENCY:-2}
+      - TEXTLESS_DETECTION_MAX_VOTES=${TEXTLESS_DETECTION_MAX_VOTES:-3000}
+      - AIOSTREAMS_URL=${AIOSTREAMS_URL:-}
+      - AIOSTREAMS_AUTH=${AIOSTREAMS_AUTH:-}
+      - QUALITY_OLD_CACHE_DURATION=${QUALITY_OLD_CACHE_DURATION:-90}
+      - QUALITY_BG_CONCURRENCY=${QUALITY_BG_CONCURRENCY:-5}
+      - CDN_CACHE_TTL=${CDN_CACHE_TTL:-0}
+      - COMPOSITE_CACHE_TTL=${COMPOSITE_CACHE_TTL:-604800}
+      - COMPOSITE_MAX_ENTRIES=${COMPOSITE_MAX_ENTRIES:-0}
+      - DEFAULT_LOGO_LANGUAGE=${DEFAULT_LOGO_LANGUAGE:-en}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
