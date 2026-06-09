@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Posterfletch</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">P+</div>
+          <div>
+            <div class="brand-name">POSTERS PLUS</div>
+            <div class="brand-version">v1.8.0</div>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item">Tableau de bord</button>
+          <div class="nav-section">Paramètres</div>
+          <button class="nav-item">Général</button>
+          <button class="nav-item">Affiches</button>
+          <button class="nav-item">Cache</button>
+          <button class="nav-item">AIOStreams</button>
+          <button class="nav-item active">Prefetch</button>
+          <button class="nav-item">Avancé</button>
+          <button class="nav-item">Logs</button>
+        </nav>
+
+        <div class="sidebar-card">
+          <div class="status-row">
+            <span class="status-dot"></span>
+            <strong>Service actif</strong>
+          </div>
+          <div class="muted">Uptime: 2j 14h 32m 17s</div>
+          <div class="muted">Version: 1.8.0</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1>PREFETCH</h1>
+            <p>Préchargez les catalogues et les flux de vos addons Stremio pour garder les caches chauds et réduire le temps d’attente à l’ouverture.</p>
+          </div>
+          <button class="btn btn-primary" id="saveBtn">Enregistrer</button>
+        </header>
+
+        <section class="grid">
+          <div class="left-col">
+            <section class="panel hero-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Activer le prefetch</h2>
+                  <p>Active le préchargement automatique des qualités à l’heure définie.</p>
+                </div>
+                <button class="toggle on" id="togglePrefetch" aria-pressed="true" aria-label="Activer le prefetch">
+                  <span></span>
+                </button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="section-title">Sources</div>
+              <div class="field">
+                <label for="catalogUrl">Manifest catalogue (liste)</label>
+                <div class="input-row">
+                  <input id="catalogUrl" type="text" placeholder="https://addon.exemple.com/manifest.json" />
+                  <button class="btn btn-secondary" data-test="catalog">Tester</button>
+                </div>
+                <div class="hint">URL du manifest contenant vos catalogues Stremio compatibles</div>
+              </div>
+
+              <div class="field">
+                <label for="aioUrl">Manifest flux / streams</label>
+                <div class="input-row">
+                  <input id="aioUrl" type="text" placeholder="https://streams.exemple.com/manifest.json" />
+                  <button class="btn btn-secondary" data-test="aio">Tester</button>
+                </div>
+                <div class="hint">Optionnel : addon utilisé pour réchauffer les flux et vérifier les streams disponibles</div>
+              </div>
+
+              <div class="panel-actions">
+                <button class="btn btn-primary" id="loadCatalogs">Charger les catalogues</button>
+                <div class="success" id="manifestStatus">Manifest chargé avec succès · 24 catalogues trouvés</div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="section-title">Planification</div>
+              <div class="schedule-grid">
+                <div class="field">
+                  <label for="runTime">Heure d'exécution</label>
+                  <input id="runTime" type="time" value="03:00" />
+                  <div class="hint">Heure à laquelle le préchargement sera lancé</div>
+                </div>
+
+                <div class="field">
+                  <label>Jours d'exécution</label>
+                  <div class="day-chips" id="days">
+                    <button class="chip" data-day="0" type="button">Lun</button>
+                    <button class="chip" data-day="1" type="button">Mar</button>
+                    <button class="chip" data-day="2" type="button">Mer</button>
+                    <button class="chip" data-day="3" type="button">Jeu</button>
+                    <button class="chip" data-day="4" type="button">Ven</button>
+                    <button class="chip" data-day="5" type="button">Sam</button>
+                    <button class="chip" data-day="6" type="button">Dim</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="schedule-grid bottom">
+                <div class="field">
+                  <label for="limit">Limite par exécution</label>
+                  <input id="limit" type="number" min="1" value="500" />
+                  <div class="hint">Nombre maximum d’items à traiter par exécution</div>
+                </div>
+
+                <div class="checks">
+                  <label><input id="includeMovies" type="checkbox" checked /> Précharger les films</label>
+                  <label><input id="includeSeries" type="checkbox" checked /> Précharger les séries</label>
+                  <label><input id="refreshExpired" type="checkbox" checked /> Rafraîchir les items déjà en cache</label>
+                </div>
+              </div>
+
+              <div class="info-row">
+                <div class="info-box">
+                  <strong>Le cache des qualités récentes est valide 1 jour.</strong>
+                  <span>Les qualités plus anciennes sont conservées 90 jours.</span>
+                </div>
+                <button class="btn btn-primary" id="runNow">Lancer maintenant</button>
+              </div>
+            </section>
+          </div>
+
+          <aside class="right-col">
+            <section class="panel stat-panel">
+              <div class="panel-head compact">
+                <h2>Statut du prefetch</h2>
+                <div class="pill" id="activePill">Actif</div>
+              </div>
+
+              <div class="stats">
+                <div class="metric">
+                  <div class="metric-label">Prochain lancement</div>
+                  <div class="metric-value" id="nextRun">Aujourd’hui à 03:00</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Dernier lancement</div>
+                  <div class="metric-value" id="lastRun">Hier à 03:00</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Statut</div>
+                  <div class="metric-value" id="runStatus">Terminé avec succès</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Durée</div>
+                  <div class="metric-value" id="duration">18 min 42 sec</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Items traités</div>
+                  <div class="metric-value" id="processed">462 / 462</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Nouveaux en cache</div>
+                  <div class="metric-value" id="newCache">128</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Erreurs</div>
+                  <div class="metric-value" id="errors">0</div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel stat-panel">
+              <div class="panel-head compact">
+                <h2>Catalogues sélectionnés</h2>
+                <div class="catalog-count" id="catalogCount">24</div>
+              </div>
+              <div class="catalog-list" id="catalogList">
+              </div>
+              <a class="more-link" href="#">Voir tous les catalogues →</a>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast">Préfetch lancé en démonstration</div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
